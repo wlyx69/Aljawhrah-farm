@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*_TikTokHQ*.mp4
+.DS_Store
+Thumbs.db
