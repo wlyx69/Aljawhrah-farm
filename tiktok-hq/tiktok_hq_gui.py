@@ -65,7 +65,14 @@ def smoke(out_file: str) -> int:
         r2 = core.run([ffprobe, "-version"], timeout=60)
         v2 = (r2.stdout or "").splitlines()[0] if r2.returncode == 0 and r2.stdout else f"rc={r2.returncode}"
         ok = r.returncode == 0 and r2.returncode == 0
-        lines.append(("ok" if ok else "FAIL") + f" version={core.VERSION} frozen={core.is_frozen()}")
+        try:
+            import tkinter  # noqa: F401  (importing needs no display; a packaged app must have it)
+            tk_note = f"tk={tkinter.TkVersion}"
+        except Exception as e:  # noqa: BLE001
+            tk_note = f"tk=MISSING ({e})"
+            if core.is_frozen():
+                ok = False
+        lines.append(("ok" if ok else "FAIL") + f" version={core.VERSION} frozen={core.is_frozen()} {tk_note}")
         lines.append(f"ffmpeg={ffmpeg}")
         lines.append(f"ffprobe={ffprobe}")
         lines.append(v)
