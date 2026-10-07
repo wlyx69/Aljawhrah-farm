@@ -71,7 +71,11 @@ jobs:
           ls -la bin
           "./bin/ffmpeg${EXT}" -version | head -n 2
           "./bin/ffprobe${EXT}" -version | head -n 1
-          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -E "libx264|aac" || true
+          # the tool needs libx264 + aac (encode path) and zscale (HDR tonemap)
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -E "libx264|aac"
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " libx264 "
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " aac "
+          "./bin/ffmpeg${EXT}" -hide_banner -filters 2>/dev/null | grep -q " zscale " || echo "::warning::zscale filter missing: HDR sources will use the fallback tonemap path"
 
       - name: Unit tests (bundled ffmpeg on PATH)
         run: |

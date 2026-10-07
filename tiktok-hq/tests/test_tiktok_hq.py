@@ -285,6 +285,18 @@ class CliTests(unittest.TestCase):
             self.assertEqual(t.main([str(src), "--method", "all", "--out-dir", str(tmp / "all")]), 0)
             for m in t.METHODS:
                 self.assertTrue((tmp / "all" / f"clip_TikTokHQ_{m}.mp4").is_file(), m)
+            # HEVC source -> the libx264 encode path (what iPhone videos take), progress hook included
+            hevc = make_fixture(tmp / "hevc.mp4", dur="1", vcodec=("libx265", "-tag:v", "hvc1"),
+                                extra=("-preset", "ultrafast", "-x265-params", "log-level=error"))
+            progress = []
+            t.set_output(lambda m: None, progress.append)
+            try:
+                self.assertEqual(t.main([str(hevc), "--preset", "veryfast", "--out-dir", str(tmp / "enc")]), 0)
+            finally:
+                t.set_output(t._print_line, t._print_progress)
+            enc = t.probe(FFPROBE, tmp / "enc" / "hevc_TikTokHQ.mp4")
+            self.assertEqual((enc.vcodec, enc.vprofile, enc.audio_streams), ("h264", "High", 2))
+            self.assertTrue(any(p.startswith("frame=") for p in progress), progress)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
