@@ -370,6 +370,9 @@ def decide(an: Analysis, force_encode: bool = False, no_encode: bool = False) ->
         warnings.append(f"{w}x{h} is not 1080x1920; TikTok letterboxes non-9:16 video (not a quality issue)")
     if an.vcodec == "h264" and an.vlevel and an.vlevel > 42:
         warnings.append(f"H.264 level {an.vlevel / 10:.1f} is above 4.2; reference pass-through files used level 4.2")
+    if video == "copy" and an.fps and an.avg_fps and abs(an.avg_fps - an.fps) > 0.5:
+        warnings.append(f"variable frame rate (nominal {an.fps:.2f}, average {an.avg_fps:.2f}); "
+                        "screen recordings often are. If TikTok re-encodes it, retry with --force-encode (constant frame rate)")
     return Decision(video=video, audio=audio, reasons=reasons, warnings=warnings)
 
 
