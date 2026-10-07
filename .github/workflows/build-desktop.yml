@@ -1,0 +1,185 @@
+name: Build desktop app
+
+# Builds the TikTok HQ desktop app (tiktok-hq/) with PyInstaller on Windows and
+# macOS, with static ffmpeg/ffprobe inside. Every push that touches tiktok-hq/
+# builds and keeps the files as workflow artifacts; when VERSION in
+# tiktok_hq.py has no tag yet (or a "v*" tag is pushed) the files are published
+# on a GitHub Release.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "tiktok-hq/**"
+      - ".github/workflows/build-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # static ffmpeg + ffprobe builds (FFmpeg 6.1.1) from github.com/eugeneware/ffmpeg-static
+  FFMPEG_STATIC_TAG: b6.1.1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            plat: win32-x64
+            ext: ".exe"
+            artifact: TikTokHQ-windows
+          - os: macos-latest
+            plat: darwin-arm64
+            ext: ""
+            artifact: TikTokHQ-macos-apple-silicon
+          - os: macos-15-intel
+            plat: darwin-x64
+            ext: ""
+            artifact: TikTokHQ-macos-intel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: tiktok-hq
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download static ffmpeg + ffprobe
+        env:
+          PLAT: ${{ matrix.plat }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          for t in ffmpeg ffprobe; do
+            url="https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_TAG}/${t}-${PLAT}.gz"
+            echo "fetching $url"
+            curl -fsSL --retry 4 --retry-delay 5 -o "bin/${t}.gz" "$url"
+            gunzip -f "bin/${t}.gz"
+            if [ -n "$EXT" ]; then mv -f "bin/${t}" "bin/${t}${EXT}"; fi
+            chmod +x "bin/${t}${EXT}"
+          done
+          ls -la bin
+          "./bin/ffmpeg${EXT}" -version | head -n 2
+          "./bin/ffprobe${EXT}" -version | head -n 1
+          # the tool needs libx264 + aac (encode path) and zscale (HDR tonemap)
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -E "libx264|aac"
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " libx264 "
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " aac "
+          "./bin/ffmpeg${EXT}" -hide_banner -filters 2>/dev/null | grep -q " zscale " || echo "::warning::zscale filter missing: HDR sources will use the fallback tonemap path"
+
+      - name: Unit tests (bundled ffmpeg on PATH)
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          python -m unittest discover -s tests -v
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip "pyinstaller>=6.10,<7"
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm --clean TikTokHQ.spec
+
+      - name: Smoke test the built app (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          ls -la dist
+          rm -f smoke.txt
+          ./dist/TikTokHQ.exe --smoke smoke.txt || true
+          for i in $(seq 1 60); do [ -s smoke.txt ] && break; sleep 1; done
+          cat smoke.txt
+          grep -q "^ok" smoke.txt
+
+      - name: Smoke test the built app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          ls -la dist
+          rm -f smoke.txt
+          ./dist/TikTokHQ.app/Contents/MacOS/TikTokHQ --smoke smoke.txt
+          cat smoke.txt
+          grep -q "^ok" smoke.txt
+
+      - name: Package
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/TikTokHQ.exe "out/${ARTIFACT}.exe"
+          else
+            ditto -c -k --sequesterRsrc --keepParent dist/TikTokHQ.app "out/${ARTIFACT}.zip"
+          fi
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: tiktok-hq/out/*
+          if-no-files-found: error
+
+  release:
+    # Publishes a GitHub Release with the three files when the version in
+    # tiktok_hq.py (VERSION = "x.y.z") has no "vx.y.z" tag yet, or when a v* tag
+    # was pushed. The release creates the tag itself, so nobody has to push tags.
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            v=$(sed -nE 's/^VERSION = "([^"]+)"/\1/p' tiktok-hq/tiktok_hq.py | head -n 1)
+            tag="v$v"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "tag $tag already exists: nothing to publish (bump VERSION in tiktok_hq.py to release)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "releasing $tag from $GITHUB_SHA"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          path: out
+          merge-multiple: true
+
+      - run: ls -la out
+        if: steps.tag.outputs.skip == 'false'
+
+      - uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: TikTok HQ ${{ steps.tag.outputs.tag }}
+          files: out/*
+          make_latest: true
+          body: |
+            برنامج سطح مكتب جاهز، ما يحتاج تثبيت Python ولا ffmpeg.
+
+            - **Windows**: نزّل `TikTokHQ-windows.exe` وافتحه. أول مرة يطلع تحذير SmartScreen: اضغط **More info** ثم **Run anyway**.
+            - **Mac بمعالج Apple (M1/M2/M3/M4)**: نزّل `TikTokHQ-macos-apple-silicon.zip`، فكّه، وانقل التطبيق لمجلد Applications.
+            - **Mac بمعالج Intel**: نزّل `TikTokHQ-macos-intel.zip`.
+            - على Mac أول فتح: إذا طلع "cannot be opened"، افتح System Settings → Privacy & Security، وانزل تحت واضغط **Open Anyway**.
+
+            Ready-made desktop app: no Python or ffmpeg install needed. See tiktok-hq/README.md for the full guide.
