@@ -682,29 +682,61 @@ def media_sha256(d: bytes, strip_ghost_tail: bool = False) -> str:
 # ---- tree model (used by the audio method) --------------------------------- #
 
 def tparse(d: bytes, start: int, end: int) -> List[dict]:
+    """Box tree. Small leaves hold a bytes copy; mdat holds zero-copy memoryview segments."""
     nodes: List[dict] = []
     for b in iter_boxes(d, start, end):
         node: Dict[str, Any] = {"type": b.type, "hdr": b.hdr, "start": b.start, "size": b.size}
         if b.type in TREE_CONTAINERS:
             node["children"] = tparse(d, b.body, b.end)
+        elif b.type == "mdat":
+            node["segments"] = [memoryview(d)[b.body:b.end]]
         else:
             node["data"] = d[b.body:b.end]
         nodes.append(node)
     return nodes
 
 
-def tserialize(nodes: List[dict]) -> bytes:
-    out = bytearray()
+def tpayload_len(n: dict) -> int:
+    if "children" in n:
+        return sum(8 + tpayload_len(c) if not _needs_large_header(c) else 16 + tpayload_len(c) for c in n["children"])
+    if "segments" in n:
+        return sum(len(s) for s in n["segments"])
+    return len(n["data"])
+
+
+def _needs_large_header(n: dict) -> bool:
+    hdr = 8 if "children" in n else n["hdr"]
+    return hdr == 16 or 8 + tpayload_len(n) >= 1 << 32
+
+
+def twrite(f, nodes: List[dict]) -> int:
+    """Serialize the tree into a file object (streaming, no full-file buffer). Returns bytes written."""
+    written = 0
     for n in nodes:
-        payload = tserialize(n["children"]) if "children" in n else n["data"]
-        hdr = 8 if "children" in n else n["hdr"]
-        total = hdr + len(payload)
-        if hdr == 16 or total >= 1 << 32:
-            out += p32(1) + n["type"].encode("latin-1") + p64(16 + len(payload))
+        plen = tpayload_len(n)
+        if _needs_large_header(n):
+            f.write(p32(1) + n["type"].encode("latin-1") + p64(16 + plen))
+            written += 16
         else:
-            out += p32(total) + n["type"].encode("latin-1")
-        out += payload
-    return bytes(out)
+            f.write(p32(8 + plen) + n["type"].encode("latin-1"))
+            written += 8
+        if "children" in n:
+            written += twrite(f, n["children"])
+        elif "segments" in n:
+            for s in n["segments"]:
+                f.write(s)
+            written += plen
+        else:
+            f.write(n["data"])
+            written += plen
+    return written
+
+
+def tserialize(nodes: List[dict]) -> bytes:
+    import io
+    buf = io.BytesIO()
+    twrite(buf, nodes)
+    return buf.getvalue()
 
 
 def tfind(nodes: List[dict], typ: str):
@@ -953,6 +985,14 @@ def replica_too_json(maxrate_bps: int = REPLICA_MAXRATE) -> str:
 # --------------------------------------------------------------------------- #
 
 def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> Tuple[bytes, dict]:
+    """In-memory variant of audio_ghost_patch_to (used by tests and small files)."""
+    import io
+    buf = io.BytesIO()
+    stats = audio_ghost_patch_to(d, buf, multiplier, tags)
+    return buf.getvalue(), stats
+
+
+def audio_ghost_patch_to(d: bytes, out_file, multiplier: int = 10, tags: str = "replica") -> dict:
     """
     Reverse-engineered from a patcher whose output TikTok was passing through
     (observed 2026-08-29, reported working Sep 2026):
@@ -965,6 +1005,7 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
          each, stored in one chunk in a trailing mdat.
     Players use the first audio track; the clone only changes what a
     duration/bitrate estimator reads from the container.
+    The result is streamed into `out_file`; peak memory stays near one copy of the input.
     """
     if multiplier < 2:
         raise ToolError("multiplier must be >= 2")
@@ -990,9 +1031,11 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
     stats: Dict[str, Any] = {"method": "audio"}
 
     # 1. cut x264 SEI NAL units (first access unit) ----------------------------
-    body = mdat["data"]
     old_body_start = mdat["start"] + mdat["hdr"]
-    sei_ranges = find_x264_sei_ranges(body)
+    body_len = mdat["size"] - mdat["hdr"]
+    # the SEI sits in the first access unit, so scanning the first few MB is enough
+    scan = d[old_body_start:old_body_start + min(body_len, 8 * 1024 * 1024)]
+    sei_ranges = find_x264_sei_ranges(scan)
     cut_abs: List[Tuple[int, int]] = []   # (absolute start in the ORIGINAL file, length)
     if sei_ranges:
         layout = sample_layout(vstbl)
@@ -1005,14 +1048,14 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
             vsizes[hit[0]] -= (e - s)
             cut_abs.append((abs_s, e - s))
         t_set_stsz(tchild(vstbl, "stsz"), vsizes)
-        parts = []
-        pos = 0
+        view = memoryview(d)
+        segments = []
+        pos = old_body_start
         for s, e in sei_ranges:
-            parts.append(body[pos:s])
-            pos = e
-        parts.append(body[pos:])
-        body = b"".join(parts)
-        mdat["data"] = body
+            segments.append(view[pos:old_body_start + s])
+            pos = old_body_start + e
+        segments.append(view[pos:old_body_start + body_len])
+        mdat["segments"] = segments
     stats["sei_removed"] = len(sei_ranges)
 
     # 2./3. sample entries and tags --------------------------------------------
@@ -1079,6 +1122,7 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
     ftyp_node = {"type": "ftyp", "hdr": 8, "start": 0, "size": 0, "data": build_ftyp()[8:]}
     tree = [ftyp_node] + [n for n in tree if n["type"] not in ("ftyp", "free", "skip", "mdat")] + [mdat]
     ghost_mdat = {"type": "mdat", "hdr": 8, "start": 0, "size": 0, "data": GHOST_SAMPLE * ghost}
+    mdat["hdr"] = 16 if 8 + tpayload_len(mdat) >= 1 << 32 else 8
 
     def remap(o: int, shift: int) -> int:
         return o + shift - sum(ln for (cs, ln) in cut_abs if cs < o)
@@ -1086,10 +1130,10 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
     chunk_boxes = [b for b in tfind(moov["children"], "stco")] + [b for b in tfind(moov["children"], "co64")]
     originals = {id(b): t_chunk_offsets(b) for b in chunk_boxes}
     for _ in range(2):   # offsets do not change box sizes, so two passes converge
-        head = tserialize(tree[:tree.index(mdat)])
-        new_body_start = len(head) + mdat["hdr"]
+        head_len = len(tserialize(tree[:tree.index(mdat)]))
+        new_body_start = head_len + mdat["hdr"]
         shift = new_body_start - old_body_start
-        ghost_body = len(head) + mdat["hdr"] + len(mdat["data"]) + ghost_mdat["hdr"]
+        ghost_body = new_body_start + tpayload_len(mdat) + ghost_mdat["hdr"]
         for b in chunk_boxes:
             offs = originals[id(b)]
             if b is co_b:
@@ -1097,9 +1141,9 @@ def audio_ghost_patch(d: bytes, multiplier: int = 10, tags: str = "replica") -> 
             else:
                 offs = [remap(o, shift) for o in offs]
             t_set_chunk_offsets(b, offs)
-    out = tserialize(tree) + tserialize([ghost_mdat])
-    stats["bytes_added"] = len(out) - len(d)
-    return out, stats
+    written = twrite(out_file, tree) + twrite(out_file, [ghost_mdat])
+    stats["bytes_added"] = written - len(d)
+    return stats
 
 
 # --------------------------------------------------------------------------- #
@@ -1526,23 +1570,26 @@ def cmd_prep(args: argparse.Namespace) -> int:
         results: List[Tuple[Path, dict]] = []
         for method in methods:
             say(f"[2/3] patch ({method})")
-            if method == "audio":
-                out_bytes, stats = audio_ghost_patch(staged_bytes, args.multiplier, args.tags)
-            elif method == "ghost":
-                out_bytes, stats = ghost_patch(staged_bytes, args.multiplier, args.replica)
-            elif method == "elst":
-                out_bytes, stats = elst_patch(staged_bytes)
-            else:
-                fps = round(staged_an.fps)
-                divisor = 4 if fps >= 100 else 2
-                if fps not in (60, 120) and not args.fps_divisor:
-                    say(f"  !! fps method expects a 60 or 120 fps source (this is {staged_an.fps:.2f}); using divisor 2")
-                out_bytes, stats = fps_patch(staged_bytes, args.fps_divisor or divisor)
             out = output_path_for(src, method, multi, out_dir)
             if out.resolve() == src.resolve():
                 raise ToolError("output path equals input path")
-            with open(out, "wb") as f:
-                f.write(out_bytes)
+            if method == "audio":
+                with open(out, "wb") as f:
+                    stats = audio_ghost_patch_to(staged_bytes, f, args.multiplier, args.tags)
+            else:
+                if method == "ghost":
+                    out_bytes, stats = ghost_patch(staged_bytes, args.multiplier, args.replica)
+                elif method == "elst":
+                    out_bytes, stats = elst_patch(staged_bytes)
+                else:
+                    fps = round(staged_an.fps)
+                    divisor = 4 if fps >= 100 else 2
+                    if fps not in (60, 120) and not args.fps_divisor:
+                        say(f"  !! fps method expects a 60 or 120 fps source (this is {staged_an.fps:.2f}); using divisor 2")
+                    out_bytes, stats = fps_patch(staged_bytes, args.fps_divisor or divisor)
+                with open(out, "wb") as f:
+                    f.write(out_bytes)
+                del out_bytes
             for k, v in stats.items():
                 say(f"  {k:<20}: {v}")
             say(f"[3/3] verify ({method})")
