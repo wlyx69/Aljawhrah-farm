@@ -289,5 +289,40 @@ class CliTests(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class DesktopHooksTests(unittest.TestCase):
+    """Hooks used by the desktop window / packaged app."""
+
+    def tearDown(self):
+        t.set_output(t._print_line, t._print_progress)
+        for attr in ("frozen", "_MEIPASS"):
+            if hasattr(sys, attr):
+                delattr(sys, attr)
+
+    def test_set_output_routes_say(self):
+        got = []
+        t.set_output(got.append)
+        t.say("hello")
+        t.say("")
+        self.assertEqual(got, ["hello", ""])
+
+    def test_find_tool_in_frozen_bundle(self):
+        with tempfile.TemporaryDirectory() as d:
+            exe = Path(d) / ("ffmpeg.exe" if t.os.name == "nt" else "ffmpeg")
+            exe.write_bytes(b"#!/bin/sh\n")
+            sys.frozen = True
+            sys._MEIPASS = d
+            self.assertEqual(t.find_tool("ffmpeg"), str(exe))
+
+    def test_gui_smoke_mode_needs_no_window(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "smoke.txt"
+            r = subprocess.run([sys.executable, str(HERE.parent / "tiktok_hq_gui.py"), "--smoke", str(out)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = out.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("ok "), text)
+            self.assertIn("ffmpeg version", text)
+
+
 if __name__ == "__main__":
     unittest.main()

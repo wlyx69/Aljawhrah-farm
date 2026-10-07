@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 OUTPUT_SUFFIX = "_TikTokHQ"
 
 # The 8-byte filler every ghost sample points to / consists of:
@@ -96,8 +96,67 @@ class MP4Error(ToolError):
     """The MP4 structure could not be parsed or patched safely."""
 
 
+# Output hooks. The CLI prints; a GUI replaces these (see tiktok_hq_gui.py).
+OUTPUT: Callable[[str], None]
+PROGRESS: Callable[[str], None]
+
+
+def _print_line(msg: str) -> None:
+    if sys.stdout is None:          # windowed (no-console) app
+        return
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
+
+
+def _print_progress(msg: str) -> None:
+    """ffmpeg progress line (same console line); an empty message ends the line."""
+    if sys.stdout is None:
+        return
+    try:
+        if msg:
+            print("\r  " + msg[:100].ljust(100), end="", flush=True)
+        else:
+            print(flush=True)
+    except Exception:
+        pass
+
+
+OUTPUT = _print_line
+PROGRESS = _print_progress
+
+
+def set_output(line: Callable[[str], None], progress: Optional[Callable[[str], None]] = None) -> None:
+    """Route all messages (and ffmpeg progress) to the given callables instead of stdout."""
+    global OUTPUT, PROGRESS
+    OUTPUT = line
+    PROGRESS = progress or (lambda m: None)
+
+
 def say(msg: str = "") -> None:
-    print(msg, flush=True)
+    OUTPUT(msg)
+
+
+def is_frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def _app_dirs() -> List[Path]:
+    """Directories a packaged app may ship ffmpeg in: the PyInstaller bundle, the exe folder, the .app Resources."""
+    dirs: List[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        dirs.append(Path(meipass))
+    if is_frozen():
+        exe_dir = Path(sys.executable).resolve().parent
+        dirs += [exe_dir, exe_dir / "_internal", exe_dir.parent / "Resources", exe_dir.parent / "Frameworks"]
+    dirs.append(Path(__file__).resolve().parent)
+    return dirs
+
+
+# subprocess flags: never pop a console window behind a windowed app
+SUBPROCESS_FLAGS = 0x08000000 if os.name == "nt" else 0   # CREATE_NO_WINDOW
 
 
 def human_size(n: float) -> str:
@@ -117,12 +176,12 @@ def sha256_file(path: Path) -> str:
 
 
 def find_tool(name: str) -> Optional[str]:
-    """Find ffmpeg/ffprobe on PATH, next to this script, in ./bin, or in the winget folder."""
-    here = Path(__file__).resolve().parent
+    """Find ffmpeg/ffprobe inside the packaged app, next to this script, in ./bin, on PATH, or in the winget folder."""
     exe = name + (".exe" if os.name == "nt" else "")
-    for candidate in (here / exe, here / "bin" / exe, here / "ffmpeg" / exe, here / "ffmpeg" / "bin" / exe):
-        if candidate.is_file():
-            return str(candidate)
+    for here in _app_dirs():
+        for candidate in (here / exe, here / "bin" / exe, here / "ffmpeg" / exe, here / "ffmpeg" / "bin" / exe):
+            if candidate.is_file():
+                return str(candidate)
     found = shutil.which(name)
     if found:
         return found
@@ -146,7 +205,8 @@ def require_tools() -> Tuple[str, str]:
             "  Windows : winget install Gyan.FFmpeg   (then open a NEW terminal)\n"
             "  macOS   : brew install ffmpeg\n"
             "  Linux   : sudo apt install ffmpeg\n"
-            "  ...or put ffmpeg.exe and ffprobe.exe next to tiktok_hq.py"
+            "  ...or put ffmpeg.exe and ffprobe.exe next to tiktok_hq.py\n"
+            "  (or download the ready-made desktop app from the GitHub Releases page)"
         )
     return ffmpeg, ffprobe
 
@@ -154,7 +214,8 @@ def require_tools() -> Tuple[str, str]:
 def run(cmd: List[str], timeout: Optional[int] = None) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=timeout)
+                              errors="replace", timeout=timeout, stdin=subprocess.DEVNULL,
+                              creationflags=SUBPROCESS_FLAGS)
     except FileNotFoundError as e:
         raise ToolError(f"cannot run {cmd[0]}: {e}")
 
@@ -465,8 +526,8 @@ def build_ffmpeg_cmd(ffmpeg: str, an: Analysis, dec: Decision, dst: Path, *, crf
 def ffmpeg_stage(ffmpeg: str, an: Analysis, dec: Decision, dst: Path, **enc) -> None:
     cmd = build_ffmpeg_cmd(ffmpeg, an, dec, dst, **enc)
     say("  " + ("encoding with libx264 ..." if dec.video == "encode" else "lossless remux (-c copy) ..."))
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-                            encoding="utf-8", errors="replace")
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace", creationflags=SUBPROCESS_FLAGS)
     last_progress = ""
     tail: List[str] = []
     assert proc.stderr is not None
@@ -478,10 +539,10 @@ def ffmpeg_stage(ffmpeg: str, an: Analysis, dec: Decision, dst: Path, **enc) -> 
         tail = tail[-40:]
         if line.startswith("frame=") or "time=" in line:
             last_progress = line.strip()
-            print("\r  " + last_progress[:100].ljust(100), end="", flush=True)
+            PROGRESS(last_progress)
     proc.wait()
     if last_progress:
-        print()
+        PROGRESS("")
     if proc.returncode != 0 or not dst.is_file() or dst.stat().st_size == 0:
         raise ToolError("ffmpeg failed:\n" + "\n".join(tail[-12:]))
 
@@ -1833,10 +1894,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         say("\ncancelled")
         return 130
     finally:
-        if interactive:
+        if interactive and sys.stdin is not None:
             try:
                 input("\nPress Enter to close...")
-            except EOFError:
+            except Exception:
                 pass
 
 
