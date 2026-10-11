@@ -19,7 +19,9 @@ machine (no WebView2 runtime, or the page never loads); the launcher
 """
 from __future__ import annotations
 
+import collections
 import json
+import logging
 import os
 import queue
 import re
@@ -473,6 +475,23 @@ UPLOAD_TEXT_JS = ("document.getElementById('up-title').textContent + ' | ' + doc
 SELFTEST_CAPTION = "تجربة النشر من TikTok HQ #TikTokHQ"
 
 
+class _LogTail(logging.Handler):
+    """Keeps pywebview's last log lines for the self-test report."""
+
+    def __init__(self, size: int = 80) -> None:
+        super().__init__(logging.DEBUG)
+        self.lines: "collections.deque[str]" = collections.deque(maxlen=size)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.lines.append(f"{time.strftime('%H:%M:%S')} {record.levelname} {record.getMessage()}"[:400])
+        except Exception:  # noqa: BLE001
+            pass
+
+
+WINDOW_EVENTS = ("initialized", "before_show", "shown", "before_load", "_pywebviewready", "loaded")
+
+
 def _selftest_upload(window: Any, api: Api, lines: List[str]) -> bool:
     """After the prepare: the page set up the post on the mock page; play the user's Post; the page must notice."""
     st = _js_wait(window, f"['ready','error','closed','cancelled'].indexOf({UPLOAD_STATE_JS}) >= 0 ? {UPLOAD_STATE_JS} : ''", 240)
@@ -514,9 +533,16 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
     the browser on the mock TikTok page) and write the results to out_path."""
     lines: List[str] = []
     ok = True
+    t0 = time.monotonic()
     try:
         if not window.events.loaded.wait(60):
+            # where it stopped: before_load is set once the page finished loading, loaded once the bridge is in
+            ev = window.events
+            lines.append("window_events=" + " ".join(f"{n}:{int(getattr(ev, n).is_set())}" for n in WINDOW_EVENTS))
+            late = ev.loaded.wait(60)
+            lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no (120 s)"))
             raise RuntimeError("the page did not load within 60 s")
+        lines.append(f"load_seconds={time.monotonic() - t0:.1f}")
         lines.append(f"renderer={api.renderer}")
         expected = json.dumps("v" + core.VERSION)
         booted = _js_wait(window, f"document.getElementById('version').textContent === {expected} ? 'yes' : ''", 30)
@@ -554,6 +580,9 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             except Exception:  # noqa: BLE001
                 pass
         state["selftest_rc"] = 0 if ok else 1
+        tail = state.get("log_tail")
+        if not ok and tail is not None:
+            lines += ["pywebview log:"] + [f"  {line}" for line in tail.lines]
         head = ("ok" if ok else "FAIL") + f" version={core.VERSION} platform={sys.platform}"
         try:
             Path(out_path).write_text("\n".join([head] + lines + ["done"]) + "\n", encoding="utf-8")
@@ -580,6 +609,13 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None, uplo
             raise ModernUnavailable("webview2", f"renderer={renderer}")
 
     api = Api()
+    state: Dict[str, Any] = {"wired": False, "closed": False, "dead": False, "selftest_rc": 1}
+    if selftest:
+        tail = _LogTail()
+        wv_log = logging.getLogger("pywebview")
+        wv_log.addHandler(tail)
+        wv_log.setLevel(logging.DEBUG)
+        state["log_tail"] = tail
     scratch: Optional[tempfile.TemporaryDirectory] = None
     if selftest and upload_mock:
         # the self-test posts to the mock TikTok page with a throw-away browser profile
@@ -595,7 +631,6 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None, uplo
         background_color="#0f1115", text_select=False,
     )
     api.attach(window)
-    state: Dict[str, Any] = {"wired": False, "closed": False, "dead": False, "selftest_rc": 1}
 
     def on_initialized(renderer=None):
         api.renderer = renderer

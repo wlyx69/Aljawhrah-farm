@@ -164,18 +164,26 @@ jobs:
 
       - name: UI self-test of the built app (real window, prepares a clip and sets up the post on the mock page)
         timeout-minutes: 10
-        env:
-          TIKTOKHQ_BROWSER_ARGS: ${{ runner.os == 'macOS' && '--use-mock-keychain' || '' }}
         run: |
           set -euo pipefail
           rm -f ui.txt selftest_clip_TikTokHQ.mp4
-          if [ "$RUNNER_OS" = "Windows" ]; then APP=./dist/TikTokHQ.exe; else APP=./dist/TikTokHQ.app/Contents/MacOS/TikTokHQ; fi
-          "$APP" --selftest-ui ui.txt selftest_clip.mp4 --upload-mock tests/fixtures/mock_studio.html &
-          pid=$!
+          pid=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./dist/TikTokHQ.exe --selftest-ui ui.txt selftest_clip.mp4 --upload-mock tests/fixtures/mock_studio.html &
+            pid=$!
+          else
+            # started the way Finder starts apps (LaunchServices, so the app is activated like for a user);
+            # it then runs in "/", hence the absolute paths
+            open -n -a "$PWD/dist/TikTokHQ.app" --env "TIKTOKHQ_BROWSER_ARGS=--use-mock-keychain" --args \
+              --selftest-ui "$PWD/ui.txt" "$PWD/selftest_clip.mp4" --upload-mock "$PWD/tests/fixtures/mock_studio.html"
+          fi
           for i in $(seq 1 480); do grep -q "^done" ui.txt 2>/dev/null && break; sleep 1; done
           cat ui.txt || echo "no ui.txt written"
-          kill "$pid" 2>/dev/null || true
-          grep -q "^ok" ui.txt
+          if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+          if ! grep -q "^ok" ui.txt; then
+            if [ "$RUNNER_OS" = "macOS" ]; then ps -axo pid,etime,comm | grep -i -E "chrome|tiktokhq|webkit" || true; fi
+            exit 1
+          fi
           grep -q "upload_checks=.*noticed:ok" ui.txt
           test -s selftest_clip_TikTokHQ.mp4
 
