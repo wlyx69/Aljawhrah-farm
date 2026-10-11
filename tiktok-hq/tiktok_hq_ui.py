@@ -95,7 +95,10 @@ class ModernUnavailable(RuntimeError):
 
 
 def ui_dir() -> Path:
-    """The folder holding index.html: next to this file, or inside the packaged app."""
+    """The folder holding index.html: next to this file, or inside the packaged app (TIKTOKHQ_UI_DIR overrides it)."""
+    env = os.environ.get("TIKTOKHQ_UI_DIR")
+    if env and (Path(env) / "index.html").is_file():
+        return Path(env)
     for d in core._app_dirs():
         if (d / "ui" / "index.html").is_file():
             return d / "ui"
@@ -490,6 +493,55 @@ class _LogTail(logging.Handler):
 
 
 WINDOW_EVENTS = ("initialized", "before_show", "shown", "before_load", "_pywebviewready", "loaded")
+PAGE_STATE_JS = ("document.readyState + ' | ' + performance.getEntriesByType('resource').map(function (e) {"
+                 " return e.name.split('/').pop() + ':' + Math.round(e.responseEnd); }).join(',')")
+
+
+def _load_diagnostics(window: Any) -> List[str]:
+    """Why a page did not load: web view state, the page's own state, and where every Python thread is."""
+    out: List[str] = []
+    if sys.platform == "darwin":
+        try:
+            from PyObjCTools import AppHelper
+            from webview.platforms import cocoa
+            view = cocoa.BrowserView.instances.get(window.uid)
+            box: Dict[str, str] = {}
+            answered = threading.Event()
+
+            def read() -> None:
+                try:
+                    wk = view.webview
+                    box["v"] = (f"isLoading={bool(wk.isLoading())} progress={float(wk.estimatedProgress()):.2f} "
+                                f"url={wk.URL()} title={wk.title()}")
+                except Exception as e:  # noqa: BLE001
+                    box["v"] = f"error {e!r}"
+                answered.set()
+
+            AppHelper.callAfter(read)
+            out.append("webview=" + (box.get("v", "") if answered.wait(10) else "the main thread did not answer in 10 s"))
+        except Exception as e:  # noqa: BLE001
+            out.append(f"webview=? {e!r}")
+    box2: Dict[str, Any] = {}
+
+    def page_state() -> None:
+        try:  # straight to the backend: window.run_js would wait for the page to finish loading
+            box2["v"] = window.gui.evaluate_js(PAGE_STATE_JS, window.uid, False)
+        except Exception as e:  # noqa: BLE001
+            box2["v"] = f"error {e!r}"
+
+    t = threading.Thread(target=page_state, daemon=True)
+    t.start()
+    t.join(10)
+    out.append("page_js=" + (str(box2["v"]) if "v" in box2 else "no answer in 10 s"))
+    try:
+        import faulthandler
+        with tempfile.TemporaryFile("w+") as f:
+            faulthandler.dump_traceback(file=f, all_threads=True)
+            f.seek(0)
+            out += ["threads:"] + [f"  {line.rstrip()}" for line in f.read().splitlines()[:80]]
+    except Exception as e:  # noqa: BLE001
+        out.append(f"threads=? {e!r}")
+    return out
 
 
 def _selftest_upload(window: Any, api: Api, lines: List[str]) -> bool:
@@ -546,8 +598,9 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
                     lines.append(f"page_server={r.status} {len(r.read())} bytes ({page_url})")
             except Exception as e:  # noqa: BLE001
                 lines.append(f"page_server=ERROR {type(e).__name__}: {e} ({page_url})")
-            late = ev.loaded.wait(60)
-            lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no (120 s)"))
+            lines += _load_diagnostics(window)
+            late = ev.loaded.wait(45)
+            lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no"))
             raise RuntimeError("the page did not load within 60 s")
         lines.append(f"load_seconds={time.monotonic() - t0:.1f}")
         lines.append(f"renderer={api.renderer}")
