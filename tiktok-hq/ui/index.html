@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok HQ</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 3v10.4a3.2 3.2 0 1 1-2.6-3.14V7.6A5.8 5.8 0 1 0 16.6 13.4V8.2c1.2.9 2.6 1.4 4.2 1.4V7c-2.3 0-4.2-1.9-4.2-4z" fill="currentColor"/></svg>
+      </span>
+      <span class="brand-name">TikTok HQ</span>
+      <span class="badge" id="version">v</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btn-lang" title="English / عربي" type="button"><span id="lang-label">EN</span></button>
+      <button class="icon-btn" id="btn-theme" title="Theme" type="button" aria-label="theme">
+        <svg class="ico-sun" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="ico-moon" viewBox="0 0 24 24" width="18" height="18"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- hero / drop zone -->
+    <section class="card hero" id="hero">
+      <h1 class="title" data-i18n="title">جهّز الفيديو عشان تيك توك يعرضه بجودته الأصلية</h1>
+      <p class="subtitle" data-i18n="subtitle">بدون إعادة ضغط. الصورة والصوت يوصلون للمشاهد مثل ما هم.</p>
+
+      <div class="drop" id="drop" tabindex="0" role="button">
+        <div class="drop-inner" id="drop-empty">
+          <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="drop-text">
+            <strong data-i18n="drop_title">اسحب الفيديو هنا</strong>
+            <span data-i18n="drop_or">أو</span>
+            <button class="link-btn" id="btn-pick" type="button" data-i18n="drop_pick">اختر ملف</button>
+          </div>
+          <small class="muted" data-i18n="drop_hint">MP4 / MOV / MKV / WebM … حتى 4 GB و10 دقايق</small>
+        </div>
+
+        <div class="filecard hidden" id="filecard">
+          <div class="thumb" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="28" height="28"><rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="m10 9 5 3-5 3z" fill="currentColor"/></svg>
+          </div>
+          <div class="filemeta">
+            <div class="filename" id="f-name">—</div>
+            <div class="filespecs" id="f-specs">—</div>
+            <div class="plan" id="f-plan"></div>
+          </div>
+          <button class="icon-btn small" id="btn-clear" type="button" title="×" aria-label="clear">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- options -->
+    <section class="card" id="options">
+      <div class="row between">
+        <h2 class="h2" data-i18n="options">الإعدادات</h2>
+        <button class="link-btn" id="btn-advanced" type="button"><span data-i18n="advanced">خيارات متقدمة</span> <span class="chev">▾</span></button>
+      </div>
+
+      <div class="field">
+        <label class="label" data-i18n="method">الطريقة</label>
+        <div class="segmented" id="method" role="radiogroup">
+          <button type="button" data-value="audio" class="seg active"><span data-i18n="m_audio">الافتراضية</span><small data-i18n="m_audio_s">audio · موصى بها</small></button>
+          <button type="button" data-value="ghost" class="seg"><span data-i18n="m_ghost">تضخيم الفيديو</span><small data-i18n="m_ghost_s">ghost · مكشوفة</small></button>
+          <button type="button" data-value="elst" class="seg"><span data-i18n="m_elst">elst</span><small data-i18n="m_elst_s">تجريبية</small></button>
+          <button type="button" data-value="fps" class="seg"><span data-i18n="m_fps">fps</span><small data-i18n="m_fps_s">تجريبية</small></button>
+          <button type="button" data-value="all" class="seg"><span data-i18n="m_all">كل الطرق</span><small data-i18n="m_all_s">ملف لكل طريقة</small></button>
+        </div>
+        <p class="hint warn hidden" id="ghost-warn" data-i18n="ghost_warn">تيك توك يكشف هذي الطريقة من أغسطس 2026 (المنشور يصير خاص). للتجربة بس.</p>
+      </div>
+
+      <div class="advanced hidden" id="advanced">
+        <div class="field">
+          <label class="label" data-i18n="tags">التوقيع داخل الملف</label>
+          <div class="segmented" id="tags" role="radiogroup">
+            <button type="button" data-value="replica" class="seg active"><span data-i18n="t_replica">برنامج مونتاج</span><small>replica</small></button>
+            <button type="button" data-value="plain" class="seg"><span data-i18n="t_plain">ffmpeg قديم</span><small>plain</small></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="force"> <span data-i18n="force">إعادة ضغط إجبارية (بس إذا تيك توك أعاد ضغط ملفك)</span></label>
+        </div>
+        <div class="field">
+          <label class="label" data-i18n="outdir">مجلد الناتج</label>
+          <div class="row">
+            <input class="input" id="outdir" type="text" data-i18n-ph="outdir_ph" placeholder="فاضي = بجانب الفيديو الأصلي">
+            <button class="btn ghost" id="btn-outdir" type="button" data-i18n="choose">اختر</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- action -->
+    <section class="actions">
+      <button class="btn primary big" id="btn-prepare" type="button" disabled>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 3l14 9-14 9z" fill="currentColor"/></svg>
+        <span data-i18n="prepare">جهّز الفيديو</span>
+      </button>
+      <div class="tools">
+        <button class="btn ghost" id="btn-check" type="button" disabled data-i18n="check">فحص الملف</button>
+        <button class="btn ghost" id="btn-compare" type="button" data-i18n="compare">قارن المرفوع بالمعروض</button>
+      </div>
+    </section>
+
+    <!-- progress -->
+    <section class="card hidden" id="progress">
+      <div class="stepper">
+        <div class="step" data-step="1"><span class="dot"></span><span data-i18n="s1">تجهيز</span></div>
+        <div class="step" data-step="2"><span class="dot"></span><span data-i18n="s2">تعديل الحاوية</span></div>
+        <div class="step" data-step="3"><span class="dot"></span><span data-i18n="s3">تحقق</span></div>
+      </div>
+      <div class="bar"><div class="fill" id="bar-fill"></div></div>
+      <div class="status" id="status" dir="ltr"></div>
+    </section>
+
+    <!-- result -->
+    <section class="card result hidden" id="result">
+      <div class="result-head">
+        <span class="okmark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div>
+          <h2 class="h2" data-i18n="done_title">تم. الملف جاهز للرفع</h2>
+          <div class="outputs" id="outputs"></div>
+        </div>
+        <button class="btn" id="btn-open" type="button" data-i18n="open_folder">افتح المجلد</button>
+      </div>
+      <ol class="steps">
+        <li data-i18n="n1">ارفعه من متصفح الكمبيوتر (tiktok.com/upload أو TikTok Studio)، مو من تطبيق الجوال.</li>
+        <li data-i18n="n2">خلّ خيار الرفع بجودة عالية (HD) مفعّل.</li>
+        <li data-i18n="n3">لا تسوي أي تعديل أو قص أو صوت داخل تيك توك.</li>
+        <li data-i18n="n4">انشره أول شي بخصوصية (Only you) وانتظر 5 دقايق.</li>
+        <li data-i18n="n5">تأكد من الجودة من جهاز أو حساب ثاني، أو من بوت الفحص، ثم خلّه للكل.</li>
+      </ol>
+    </section>
+
+    <!-- verdict (compare) -->
+    <section class="card verdict hidden" id="verdict">
+      <div class="verdict-badge" id="verdict-badge">—</div>
+      <p class="verdict-text" id="verdict-text"></p>
+    </section>
+
+    <!-- error -->
+    <section class="card error hidden" id="error">
+      <div class="result-head">
+        <span class="errmark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 8v5m0 3.5v.5M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div>
+          <h2 class="h2" data-i18n="err_title">ما اكتمل</h2>
+          <p class="muted" id="error-text" dir="auto"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- log -->
+    <section class="card log-card" id="log-card">
+      <button class="row between link-btn wide" id="btn-log" type="button">
+        <span data-i18n="log">السجل التفصيلي</span><span class="chev" id="log-chev">▾</span>
+      </button>
+      <pre class="log hidden" id="log" dir="ltr"></pre>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span class="muted" id="tools-line"></span>
+    <span class="muted" data-i18n="foot">يشتغل على جهازك بالكامل. ما يطلع شي للإنترنت.</span>
+  </footer>
+
+  <div class="toast hidden" id="toast" dir="auto"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

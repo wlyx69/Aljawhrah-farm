@@ -336,5 +336,121 @@ class DesktopHooksTests(unittest.TestCase):
             self.assertIn("ffmpeg version", text)
 
 
+@unittest.skipUnless(FFMPEG and FFPROBE, "ffmpeg/ffprobe not available")
+class ModernUiApiTests(unittest.TestCase):
+    """The js_api layer of the modern window (tiktok_hq_ui.Api), driven without pywebview."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tiktok_hq_ui
+        cls.ui = tiktok_hq_ui
+        cls.tmp = Path(tempfile.mkdtemp(prefix="tiktokhq_ui_"))
+        cls.src = make_fixture(cls.tmp / "clip.mp4", extra=("-preset", "veryfast", "-crf", "24"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _drain(self, api, until_kind, timeout=180):
+        import time
+        events, deadline = [], time.time() + timeout
+        while time.time() < deadline:
+            batch = api.poll()
+            events += batch
+            if any(e["kind"] == until_kind for e in batch):
+                return events
+            time.sleep(0.05)
+        self.fail(f"no '{until_kind}' event within {timeout}s; got {[e['kind'] for e in events]}")
+
+    def test_probe_reports_plan(self):
+        api = self.ui.Api()
+        info = api.probe(str(self.src))
+        self.assertTrue(info["ok"], info)
+        self.assertEqual((info["plan_video"], info["plan_audio"]), ("copy", "copy"))
+        self.assertGreater(info["duration"], 1.0)
+        self.assertEqual(info["width"], 640)
+        self.assertFalse(api.probe(str(self.tmp / "nope.mp4"))["ok"])
+
+    def test_prepare_emits_stages_and_done(self):
+        api = self.ui.Api()
+        api.probe(str(self.src))
+        r = api.prepare(str(self.src), {"method": "audio", "tags": "replica", "out_dir": str(self.tmp / "out")})
+        self.assertTrue(r["started"])
+        self.assertEqual(api.prepare(str(self.src), {})["error"], "busy")   # one job at a time
+        events = self._drain(api, "done")
+        kinds = [e["kind"] for e in events]
+        self.assertEqual([e["stage"] for e in events if e["kind"] == "stage"], [1, 2, 3])
+        self.assertIn("line", kinds)
+        done = [e for e in events if e["kind"] == "done"][0]
+        self.assertEqual(done["rc"], 0, [e for e in events if e["kind"] == "line"][-5:])
+        self.assertEqual(len(done["outputs"]), 1)
+        self.assertTrue(Path(done["outputs"][0]).is_file())
+        self.assertEqual(Path(done["out_dir"]), (self.tmp / "out").resolve())
+        self.assertFalse(api.info()["busy"])
+
+    def test_compare_and_check_verdicts(self):
+        api = self.ui.Api()
+        out = self.tmp / "out" / "clip_TikTokHQ.mp4"
+        if not out.is_file():
+            api.prepare(str(self.src), {"out_dir": str(self.tmp / "out")}); self._drain(api, "done")
+        api.compare(str(out), str(out))
+        done = [e for e in self._drain(api, "done") if e["kind"] == "done"][0]
+        self.assertEqual((done["what"], done["rc"], done["verdict"]), ("compare", 0, "IDENTICAL"))
+        api.check(str(out))
+        done = [e for e in self._drain(api, "done") if e["kind"] == "done"][0]
+        self.assertEqual((done["what"], done["rc"]), ("check", 0))
+
+    def test_progress_percent_from_ffmpeg_time(self):
+        api = self.ui.Api()
+        api._duration = 10.0
+        api._progress("frame=  120 fps=60 q=28.0 size=512kB time=00:00:05.00 bitrate=800kbits/s speed=2x")
+        api._progress("")
+        ev = api.poll()
+        self.assertEqual([e["kind"] for e in ev], ["progress", "progress"])
+        self.assertAlmostEqual(ev[0]["pct"], 50.0)
+        self.assertIsNone(ev[1]["pct"])
+
+    def test_drop_event_paths(self):
+        api = self.ui.Api()
+        api._on_drop({"dataTransfer": {"files": [{"name": "a.mp4", "pywebviewFullPath": "/x/a.mp4"}]}})
+        api._on_drop({"dataTransfer": {"files": [{"name": "a.mp4"}]}})
+        self.assertEqual([(e["kind"], e.get("path")) for e in api.poll()], [("file", "/x/a.mp4"), ("file_nopath", None)])
+
+    def test_prefs_roundtrip(self):
+        import tiktok_hq_ui as ui
+        old = ui.prefs_path
+        ui.prefs_path = lambda: self.tmp / "prefs" / "prefs.json"
+        try:
+            api = ui.Api()
+            self.assertEqual(api.get_prefs(), {})
+            self.assertTrue(api.set_prefs({"lang": "ar", "theme": "light"}))
+            self.assertEqual(api.get_prefs(), {"lang": "ar", "theme": "light"})
+        finally:
+            ui.prefs_path = old
+
+
+class ModernUiFilesTests(unittest.TestCase):
+    """ui/index.html and ui/app.js stay consistent (every label has an Arabic and an English string)."""
+
+    def test_i18n_keys_complete(self):
+        import re
+        html = (HERE.parent / "ui" / "index.html").read_text(encoding="utf-8")
+        js = (HERE.parent / "ui" / "app.js").read_text(encoding="utf-8")
+        keys = set(re.findall(r'data-i18n(?:-ph)?="([^"]+)"', html))
+        self.assertGreater(len(keys), 30)
+        ar = js[js.index("ar: {"):js.index("en: {")]
+        en = js[js.index("en: {"):js.index("var state")]
+        for k in keys:
+            pat = r"(?:^|[\s{,])(?:'%s'|%s):" % (re.escape(k), re.escape(k))
+            self.assertRegex(ar, pat, f"missing Arabic string {k}")
+            self.assertRegex(en, pat, f"missing English string {k}")
+        for k in ("v_IDENTICAL", "'v_SAME MEDIA'", "'v_SAME PICTURE'", "'v_RE-ENCODED'"):
+            self.assertIn(k, ar); self.assertIn(k, en)
+        self.assertIn('dir="rtl"', html)
+        self.assertIn('id="drop"', html)
+        for f in ("app.css", "fallback.html"):
+            self.assertTrue((HERE.parent / "ui" / f).is_file(), f)
+
+
 if __name__ == "__main__":
     unittest.main()

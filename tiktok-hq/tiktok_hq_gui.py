@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-TikTok HQ - desktop window.
+TikTok HQ - desktop app entry point.
 
-The same engine as tiktok_hq.py, wrapped in a small Tkinter window so it can be
-shipped as a normal double-click application (PyInstaller, see TikTokHQ.spec and
-.github/workflows/build-desktop.yml). ffmpeg/ffprobe ship inside the app.
+Opens the modern window (tiktok_hq_ui.py: a native web view showing ui/index.html).
+If that cannot start (pywebview missing, no WebView2 runtime...), falls back to
+the classic Tkinter window defined below. Shipped as a double-click application
+by PyInstaller (TikTokHQ.spec, .github/workflows/build-desktop.yml); ffmpeg and
+ffprobe ship inside the app.
 
   TikTokHQ                 -> open the window
   TikTokHQ VIDEO           -> open the window with VIDEO pre-selected
-  TikTokHQ --smoke FILE    -> no window; write "ok ..." to FILE if the bundled tools work (CI)
+  TikTokHQ --classic       -> force the classic Tkinter window
+  TikTokHQ --smoke FILE    -> no window; write "ok ..." to FILE if the bundled pieces work (CI)
   TikTokHQ --cli ARGS...   -> run the command-line tool (needs a terminal)
 """
 from __future__ import annotations
@@ -18,6 +21,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
 from pathlib import Path
@@ -72,7 +76,34 @@ def smoke(out_file: str) -> int:
             tk_note = f"tk=MISSING ({e})"
             if core.is_frozen():
                 ok = False
-        lines.append(("ok" if ok else "FAIL") + f" version={core.VERSION} frozen={core.is_frozen()} {tk_note}")
+        # the modern UI: pywebview importable, its page files present, .NET bridge on Windows
+        try:
+            import webview  # noqa: F401
+            from webview import _version as _wv
+            ui_note = f"ui=webview:{_wv.__version__}"
+        except Exception as e:  # noqa: BLE001
+            ui_note = f"ui=MISSING ({e})"
+            if core.is_frozen():
+                ok = False
+        try:
+            import tiktok_hq_ui
+            page = tiktok_hq_ui.ui_dir() / "index.html"
+            ui_note += " files=ok" if page.is_file() else f" files=MISSING ({page})"
+            if not page.is_file() and core.is_frozen():
+                ok = False
+        except Exception as e:  # noqa: BLE001
+            ui_note += f" files=ERROR ({e})"
+            if core.is_frozen():
+                ok = False
+        if os.name == "nt":
+            try:
+                import clr  # noqa: F401  (pythonnet: pywebview's WebView2 bridge)
+                ui_note += " clr=ok"
+            except Exception as e:  # noqa: BLE001
+                ui_note += f" clr=MISSING ({e})"
+                if core.is_frozen():
+                    ok = False
+        lines.append(("ok" if ok else "FAIL") + f" version={core.VERSION} frozen={core.is_frozen()} {tk_note} {ui_note}")
         lines.append(f"ffmpeg={ffmpeg}")
         lines.append(f"ffprobe={ffprobe}")
         lines.append(v)
@@ -345,13 +376,30 @@ def run_window(initial_file: Optional[str] = None) -> int:
     return 0
 
 
+def run_modern(initial_file: Optional[str]) -> int:
+    """The web-view window; raises if it cannot start so the caller can fall back."""
+    import tiktok_hq_ui
+    return tiktok_hq_ui.run(initial_file)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "--smoke":
         return smoke(argv[1] if len(argv) > 1 else "tiktokhq-smoke.txt")
     if argv and argv[0] == "--cli":
         return core.main(argv[1:])
+    classic = "--classic" in argv
+    argv = [a for a in argv if a != "--classic"]
     initial = argv[0] if argv and not argv[0].startswith("-") else None
+    if not classic:
+        try:
+            return run_modern(initial)
+        except Exception:  # noqa: BLE001  (no pywebview / no web view runtime: use the classic window)
+            try:
+                log = Path(tempfile.gettempdir()) / "tiktokhq-ui-fallback.log"
+                log.write_text(traceback.format_exc(), encoding="utf-8")
+            except Exception:
+                pass
     return run_window(initial)
 
 

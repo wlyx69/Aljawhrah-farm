@@ -5,7 +5,7 @@
 # Expects bin/ffmpeg(.exe) and bin/ffprobe(.exe) next to this file; the GitHub
 # workflow (.github/workflows/build-desktop.yml) downloads static builds there.
 #
-#   pip install pyinstaller
+#   pip install pyinstaller pywebview
 #   pyinstaller --noconfirm --clean TikTokHQ.spec
 import re
 import sys
@@ -25,12 +25,27 @@ for tool in ("ffmpeg", "ffprobe"):
         raise SystemExit(f"missing {p}: put a static {tool} build in bin/ first")
     binaries.append((str(p), "."))
 
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+
+# the modern UI: page files + pywebview (its own PyInstaller hook adds the WebView2 DLLs on Windows)
+datas = [(str(here / "ui"), "ui")]
+hiddenimports = ["tiktok_hq", "tiktok_hq_ui"] + collect_submodules("webview")
+if is_win:
+    # pythonnet (clr) bridges pywebview to WebView2 / WinForms
+    hiddenimports += ["clr", "clr_loader", "pythonnet"]
+    for mod in ("pythonnet", "clr_loader"):
+        try:
+            datas += collect_data_files(mod)
+            binaries += collect_dynamic_libs(mod)
+        except Exception:
+            pass
+
 a = Analysis(
     [str(here / "tiktok_hq_gui.py")],
     pathex=[str(here)],
     binaries=binaries,
-    datas=[],
-    hiddenimports=["tiktok_hq"],
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
