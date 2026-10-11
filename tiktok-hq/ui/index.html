@@ -100,6 +100,30 @@
       </div>
     </section>
 
+    <!-- posting on TikTok (hand-over: the app fills the form, the user presses Post) -->
+    <section class="card" id="post-opts">
+      <h2 class="h2" data-i18n="post_title">النشر على تيك توك</h2>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="auto-upload" checked> <span data-i18n="auto_upload">بعد التجهيز افتح تيك توك وعبّي المنشور تلقائيًا (أنت تضغط "نشر")</span></label>
+      </div>
+      <div id="post-fields">
+        <div class="field">
+          <label class="label" data-i18n="privacy">من يقدر يشوف الفيديو</label>
+          <div class="segmented" id="privacy" role="radiogroup">
+            <button type="button" role="radio" aria-checked="true" data-value="only_me" class="seg active"><span data-i18n="p_only_me">أنت فقط</span><small data-i18n="p_only_me_s">موصى بها أول مرة</small></button>
+            <button type="button" role="radio" aria-checked="false" data-value="friends" class="seg"><span data-i18n="p_friends">الأصدقاء</span><small>Friends</small></button>
+            <button type="button" role="radio" aria-checked="false" data-value="everyone" class="seg"><span data-i18n="p_everyone">الكل</span><small>Everyone</small></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="caption" data-i18n="caption">الوصف</label>
+          <textarea class="input textarea" id="caption" dir="auto" rows="2" maxlength="2200" data-i18n-ph="caption_ph" placeholder="الوصف والهاشتاقات (اختياري)"></textarea>
+        </div>
+        <p class="hint" data-i18n="post_hint">أول مرة بتسجّل دخولك لتيك توك في نافذة المتصفح اللي تنفتح، ويبقى محفوظ للمرات الجاية. البرنامج ما يضغط "نشر" أبد: أنت تراجع وتنشر.</p>
+        <p class="hint warn hidden" id="no-browser" data-i18n="no_browser_hint">ما لقينا Microsoft Edge ولا Google Chrome على الجهاز، والنشر التلقائي يحتاج واحد منهم.</p>
+      </div>
+    </section>
+
     <!-- action -->
     <section class="actions">
       <button class="btn primary big" id="btn-prepare" type="button" disabled>
@@ -133,7 +157,10 @@
           <h2 class="h2" data-i18n="done_title">تم. الملف جاهز للرفع</h2>
           <div class="outputs" id="outputs"></div>
         </div>
-        <button class="btn" id="btn-open" type="button" data-i18n="open_folder">افتح المجلد</button>
+        <div class="head-actions">
+          <button class="btn primary hidden" id="btn-upload" type="button" data-i18n="upload_now">جهّز المنشور على تيك توك</button>
+          <button class="btn" id="btn-open" type="button" data-i18n="open_folder">افتح المجلد</button>
+        </div>
       </div>
       <ol class="steps">
         <li data-i18n="n1">ارفعه من متصفح الكمبيوتر (tiktok.com/upload أو TikTok Studio)، مو من تطبيق الجوال.</li>
@@ -142,6 +169,32 @@
         <li data-i18n="n4">انشره أول شي بخصوصية (Only you) وانتظر 5 دقايق.</li>
         <li data-i18n="n5">تأكد من الجودة من جهاز أو حساب ثاني، أو من بوت الفحص، ثم خلّه للكل.</li>
       </ol>
+    </section>
+
+    <!-- upload to TikTok: status -->
+    <section class="card upload hidden" id="upload" data-state="" aria-live="polite">
+      <div class="result-head">
+        <span class="upmark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 3v10.4a3.2 3.2 0 1 1-2.6-3.14V7.6A5.8 5.8 0 1 0 16.6 13.4V8.2c1.2.9 2.6 1.4 4.2 1.4V7c-2.3 0-4.2-1.9-4.2-4z" fill="currentColor"/></svg>
+        </span>
+        <div>
+          <h2 class="h2" id="up-title">—</h2>
+          <p class="up-text" id="up-text" dir="auto"></p>
+          <p class="muted up-file" id="up-file" dir="auto"></p>
+        </div>
+        <div class="head-actions">
+          <button class="btn ghost" id="btn-up-stop" type="button" data-i18n="up_stop">إيقاف</button>
+          <button class="btn hidden" id="btn-up-retry" type="button" data-i18n="up_retry">حاول مرة ثانية</button>
+          <button class="btn ghost hidden" id="btn-up-debug" type="button" data-i18n="up_debug">ملفات التشخيص</button>
+        </div>
+      </div>
+      <div class="stepper up-steps">
+        <div class="step" data-up="1"><span class="dot"></span><span data-i18n="u1">فتح المتصفح</span></div>
+        <div class="step" data-up="2"><span class="dot"></span><span data-i18n="u2">تسجيل الدخول</span></div>
+        <div class="step" data-up="3"><span class="dot"></span><span data-i18n="u3">رفع الملف</span></div>
+        <div class="step" data-up="4"><span class="dot"></span><span data-i18n="u4">الوصف والخصوصية</span></div>
+        <div class="step" data-up="5"><span class="dot"></span><span data-i18n="u5">ضغطتك على "نشر"</span></div>
+      </div>
     </section>
 
     <!-- verdict (compare) -->
@@ -175,7 +228,7 @@
 
   <footer class="foot">
     <span class="muted" id="tools-line"></span>
-    <span class="muted" data-i18n="foot">يشتغل على جهازك بالكامل. ما يطلع شي للإنترنت.</span>
+    <span class="muted" data-i18n="foot">التجهيز على جهازك بالكامل. الرفع يصير من متصفحك أنت لحسابك في تيك توك.</span>
   </footer>
 
   <div class="toast hidden" id="toast" dir="auto" role="status" aria-live="polite"></div>

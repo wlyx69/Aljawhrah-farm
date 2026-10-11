@@ -14,8 +14,11 @@ ffprobe ship inside the app.
   TikTokHQ VIDEO           -> open the window with VIDEO pre-selected
   TikTokHQ --classic       -> force the classic Tkinter window
   TikTokHQ --smoke FILE    -> no window; write "ok ..." to FILE if the bundled pieces work (CI)
-  TikTokHQ --selftest-ui FILE [VIDEO]
-                           -> open the modern window, drive it (and prepare VIDEO), write ok/FAIL to FILE (CI)
+  TikTokHQ --selftest-ui FILE [VIDEO] [--upload-mock MOCK.html]
+                           -> open the modern window, drive it (and prepare VIDEO; with MOCK also set up the
+                              post on that test page in the browser), write ok/FAIL to FILE (CI)
+  TikTokHQ --selftest-upload FILE MOCK.html VIDEO
+                           -> fill the mock TikTok upload page in the browser (no window), write ok/FAIL to FILE (CI)
   TikTokHQ --cli ARGS...   -> run the command-line tool (needs a terminal)
 """
 from __future__ import annotations
@@ -448,11 +451,17 @@ def classic_notice(exc: BaseException, log: Optional[Path]) -> List[str]:
 
 def selftest_ui(argv: List[str]) -> int:
     """CI: open the real modern window, drive it, write ok/FAIL to a file. Never falls back."""
+    argv = list(argv)
+    mock: Optional[str] = None
+    if "--upload-mock" in argv:
+        i = argv.index("--upload-mock")
+        mock = str(Path(argv[i + 1]).resolve()) if i + 1 < len(argv) else None
+        del argv[i:i + 2]
     out = str(Path(argv[0] if argv else "tiktokhq-ui-selftest.txt").resolve())
     initial = str(Path(argv[1]).resolve()) if len(argv) > 1 else None
     try:
         import tiktok_hq_ui
-        return tiktok_hq_ui.run(initial, selftest=out)
+        return tiktok_hq_ui.run(initial, selftest=out, upload_mock=mock)
     except Exception as e:  # noqa: BLE001
         Path(out).write_text(f"FAIL version={core.VERSION} platform={sys.platform}\nerror={e!r}\n"
                              f"{traceback.format_exc()}\ndone\n", encoding="utf-8")
@@ -467,6 +476,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return core.main(argv[1:])
     if argv and argv[0] == "--selftest-ui":
         return selftest_ui(argv[1:])
+    if argv and argv[0] == "--selftest-upload":
+        import tiktok_hq_upload
+        if len(argv) < 4:
+            return 2
+        return tiktok_hq_upload.selftest(str(Path(argv[1]).resolve()), argv[2], argv[3])
     classic = "--classic" in argv
     argv = [a for a in argv if a != "--classic"]
     initial = argv[0] if argv and not argv[0].startswith("-") else None

@@ -52,7 +52,7 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
-button, input { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
@@ -182,3 +182,22 @@ button { cursor: pointer; }
 
 /* busy state */
 .busy .btn.primary { pointer-events: none; opacity: .6; }
+
+/* posting on TikTok */
+.input.textarea { display: block; width: 100%; min-height: 58px; resize: vertical; line-height: 1.5; direction: revert; unicode-bidi: plaintext; }
+.input, .textarea { -webkit-user-select: text; user-select: text; }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.upmark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(37, 244, 238, .14); color: var(--accent-text); flex: 0 0 auto; }
+.upload { border-color: rgba(37, 244, 238, .35); }
+.upload[data-state="ready"] { border-color: var(--accent-2); box-shadow: 0 0 0 1px rgba(254, 44, 85, .35), var(--shadow); }
+.upload[data-state="ready"] .upmark { background: rgba(254, 44, 85, .15); color: var(--accent-2); animation: pulse 1.6s infinite; }
+.upload[data-state="posted"] { border-color: rgba(61, 220, 132, .45); }
+.upload[data-state="posted"] .upmark { background: rgba(61, 220, 132, .15); color: var(--ok); }
+.upload[data-state="error"] { border-color: rgba(255, 90, 106, .4); }
+.upload[data-state="error"] .upmark { background: rgba(255, 90, 106, .15); color: var(--err); }
+.up-text { margin: 4px 0 0; font-weight: 600; }
+.up-file { margin: 2px 0 0; font-size: 12.5px; direction: ltr; text-align: start; unicode-bidi: plaintext; overflow-wrap: anywhere; }
+.up-steps { margin: 14px 0 0; flex-wrap: wrap; }
+.up-steps .step { min-width: 120px; }
+.step.fail { color: var(--err); border-color: rgba(255, 90, 106, .45); }
+.step.fail .dot { background: var(--err); }

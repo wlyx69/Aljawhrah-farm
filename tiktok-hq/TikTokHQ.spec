@@ -29,7 +29,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 
 # the modern UI: page files + pywebview (its own PyInstaller hook adds the WebView2 DLLs on Windows)
 datas = [(str(here / "ui"), "ui")]
-hiddenimports = ["tiktok_hq", "tiktok_hq_ui"] + collect_submodules("webview")
+hiddenimports = ["tiktok_hq", "tiktok_hq_ui", "tiktok_hq_upload"] + collect_submodules("webview")
 if is_win:
     # pythonnet (clr) bridges pywebview to WebView2 / WinForms
     hiddenimports += ["clr", "clr_loader", "pythonnet"]

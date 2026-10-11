@@ -8,6 +8,10 @@ showing ui/index.html. The page talks to the `Api` class below through
 pywebview's js_api bridge; the engine (tiktok_hq.py) is unchanged and runs in a
 worker thread, its output lines are queued and the page polls them.
 
+After a successful prepare the page can hand the file to tiktok_hq_upload: it
+opens TikTok's upload page in the user's browser, attaches the file, fills the
+caption and privacy, and the user presses "Post" there (the app never does).
+
 `Api` has no dependency on pywebview, so it is unit-tested without a display.
 `run()` raises ModernUnavailable when the web view cannot be used on this
 machine (no WebView2 runtime, or the page never loads); the launcher
@@ -21,6 +25,7 @@ import queue
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -28,6 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import tiktok_hq as core
+import tiktok_hq_upload as uploader
 
 APP_TITLE = "TikTok HQ"
 VIDEO_FILTER = "Video (*.mp4;*.mov;*.m4v;*.mkv;*.webm;*.avi;*.mts;*.ts;*.MP4;*.MOV)"
@@ -36,6 +42,7 @@ TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
 DONE_RE = re.compile(r"^DONE -> (.+?)\s+\([^()]*\)\s*$")
 VERDICTS = ("IDENTICAL", "SAME MEDIA", "SAME PICTURE", "RE-ENCODED")
 LOAD_TIMEOUT = 45.0  # seconds the window may stay blank before giving up (Windows)
+CAPTION_MAX = 2200
 WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 # Engine messages -> codes the page shows in Arabic/English (unmatched text is shown as is).
@@ -127,6 +134,9 @@ class Api:
         self._outputs: List[str] = []
         self._verdict: Optional[str] = None
         self.renderer: Optional[str] = None
+        self._uploading = False
+        self._upload_cancel: Optional[threading.Event] = None
+        self.upload_overrides: Dict[str, Any] = {}  # UploadRequest fields (the self-test points it at the mock page)
 
     # ----------------------------------------------------------------- wiring
     def attach(self, window: Any) -> None:
@@ -154,7 +164,13 @@ class Api:
             "platform": sys.platform,
             "renderer": self.renderer,
             "busy": self._busy,
+            "uploading": self._uploading,
         }
+        try:
+            b = uploader.find_browser()
+            d["browser"] = str(b) if b else None
+        except Exception:  # noqa: BLE001
+            d["browser"] = None
         try:
             ffmpeg, ffprobe = core.require_tools()
             d.update(tools_ok=True, ffmpeg=ffmpeg, ffprobe=ffprobe)
@@ -346,6 +362,66 @@ class Api:
             pct = max(0.0, min(99.0, t / self._job_duration * 100.0))
         self._emit("progress", pct=pct, text=text)
 
+    # ----------------------------------------------------------------- upload
+    def upload(self, path: str, options: Optional[dict] = None) -> dict:
+        """Open TikTok's upload page in the browser, attach `path`, fill caption + privacy; the user posts."""
+        try:
+            o = options if isinstance(options, dict) else {}
+            privacy = str(o.get("privacy") or "only_me")
+            if privacy not in uploader.PRIVACY_LABELS:
+                return {"started": False, "error": f"unknown privacy {privacy!r}"}
+            caption = str(o.get("caption") or "")[:CAPTION_MAX]
+            video = Path(str(path)).expanduser()
+            if not video.is_file():
+                return {"started": False, "error": f"file not found: {video}"}
+        except Exception as e:  # noqa: BLE001
+            return {"started": False, "error": f"bad options: {e}"}
+        with self._lock:
+            if self._uploading:
+                return {"started": False, "error": "upload_busy"}
+            self._uploading = True
+            cancel = self._upload_cancel = threading.Event()
+        try:
+            threading.Thread(target=self._run_upload, args=(str(video), caption, privacy, cancel), daemon=True).start()
+        except Exception as e:  # noqa: BLE001
+            with self._lock:
+                self._uploading = False
+            return {"started": False, "error": str(e)}
+        return {"started": True}
+
+    def cancel_upload(self) -> bool:
+        """Stop driving the browser (before the hand-over) or stop watching for the post (after it)."""
+        ev = self._upload_cancel
+        if ev is None:
+            return False
+        ev.set()
+        return True
+
+    def _run_upload(self, video: str, caption: str, privacy: str, cancel: threading.Event) -> None:
+        self._emit("upload_start", name=Path(video).name, privacy=privacy)
+
+        def status(stage: str, detail: str) -> None:
+            self._emit("line", text=f"[upload] {stage} {detail}".rstrip())
+            self._emit("upload_stage", stage=stage, detail=detail)
+
+        try:
+            req = uploader.UploadRequest(video=video, caption=caption, privacy=privacy, **self.upload_overrides)
+            res = uploader.prepare_post(req, status, cancel)
+            self._emit("upload_done", state=res.get("state"), privacy=privacy)
+        except uploader.Cancelled:
+            self._emit("upload_done", state="cancelled", privacy=privacy)
+        except uploader.UploadError as e:
+            self._emit("line", text=f"[upload] FAILED at {e.step}: {e.message}" + (f" (details: {e.debug_dir})" if e.debug_dir else ""))
+            self._emit("upload_done", state="error", step=e.step, message=e.message, debug_dir=e.debug_dir, privacy=privacy)
+        except Exception as e:  # noqa: BLE001
+            self._emit("line", text="[upload] UNEXPECTED ERROR:\n" + traceback.format_exc())
+            self._emit("upload_done", state="error", step="", message=f"{type(e).__name__}: {e}", debug_dir=None, privacy=privacy)
+        finally:
+            with self._lock:
+                self._uploading = False
+                if self._upload_cancel is cancel:
+                    self._upload_cancel = None
+
     # -------------------------------------------------------------- drag-drop
     def _on_drop(self, event: dict) -> None:
         files = (event or {}).get("dataTransfer", {}).get("files", []) or []
@@ -392,10 +468,50 @@ RESULT_JS = ("(function(){var r=document.getElementById('result'), e=document.ge
              "if(!r.classList.contains('hidden')) return 'OK ' + document.getElementById('outputs').textContent;"
              "if(!e.classList.contains('hidden')) return 'ERROR ' + document.getElementById('error-text').textContent;"
              "return '';})()")
+UPLOAD_STATE_JS = "(document.getElementById('upload').getAttribute('data-state') || '')"
+UPLOAD_TEXT_JS = ("document.getElementById('up-title').textContent + ' | ' + document.getElementById('up-text').textContent")
+SELFTEST_CAPTION = "تجربة النشر من TikTok HQ #TikTokHQ"
 
 
-def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str], state: dict) -> None:
-    """CI: drive the real window (bridge, RTL page, file card, Prepare) and write the results to out_path."""
+def _selftest_upload(window: Any, api: Api, lines: List[str]) -> bool:
+    """After the prepare: the page set up the post on the mock page; play the user's Post; the page must notice."""
+    st = _js_wait(window, f"['ready','error','closed','cancelled'].indexOf({UPLOAD_STATE_JS}) >= 0 ? {UPLOAD_STATE_JS} : ''", 240)
+    lines.append(f"upload_state={st}")
+    lines.append("upload_text=" + str(window.evaluate_js(UPLOAD_TEXT_JS) or ""))
+    if st != "ready":
+        return False
+    br = uploader.Browser(Path(api.upload_overrides["profile"]))
+    br.port = br._alive_port()
+    if not br.port:
+        lines.append("upload_browser=not running")
+        return False
+    cdp = br.page(prefer="mock")
+    try:
+        pg = uploader.Page(cdp)
+        form = pg.js("return window.__form();") or {}
+        lines.append("upload_form=" + json.dumps(form, ensure_ascii=False))
+        time.sleep(2.0)  # the app must leave the Post button alone
+        before = pg.js("return window.__events;") or []
+        pg.js("return window.__simulateUserPost();")  # stands in for the user's own click on Post
+    finally:
+        cdp.close()
+    posted = _js_wait(window, f"{UPLOAD_STATE_JS} === 'posted' ? 'posted' : ''", 60)
+    lines.append(f"upload_after_post={posted or window.evaluate_js(UPLOAD_STATE_JS)}")
+    checks = {
+        "caption": uploader._norm(form.get("caption", "")) == uploader._norm(SELFTEST_CAPTION),
+        "privacy": form.get("privacy") == "Only you",
+        "file": bool(form.get("file")) and str(form.get("file", "")).endswith("_TikTokHQ.mp4"),
+        "post_untouched": "post-click" not in before,
+        "noticed": posted == "posted",
+    }
+    lines.append("upload_checks=" + " ".join(f"{k}:{'ok' if v else 'FAIL'}" for k, v in checks.items()))
+    return all(checks.values())
+
+
+def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str], state: dict,
+              upload_mock: Optional[str] = None) -> None:
+    """CI: drive the real window (bridge, RTL page, file card, Prepare, and with upload_mock the hand-over to
+    the browser on the mock TikTok page) and write the results to out_path."""
     lines: List[str] = []
     ok = True
     try:
@@ -413,6 +529,12 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             name = _js_wait(window, FILECARD_JS, 60)
             lines.append(f"file_card={name}")
             ok = ok and name == Path(initial_file).name
+            if upload_mock:
+                window.evaluate_js("document.getElementById('auto-upload').checked = true;"
+                                   "document.querySelector('#privacy .seg[data-value=\"only_me\"]').click();"
+                                   "document.getElementById('caption').value = " + json.dumps(SELFTEST_CAPTION) + ";")
+            else:  # a self-test never opens the real TikTok
+                window.evaluate_js("document.getElementById('auto-upload').checked = false;")
             window.evaluate_js("document.getElementById('btn-prepare').click()")
             res = str(_js_wait(window, RESULT_JS, 300) or "")
             lines.append("prepare=" + res.replace("\n", " | "))
@@ -420,10 +542,17 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             produced = bool(out) and Path(out).is_file()
             lines.append(f"output={out} exists={produced}")
             ok = ok and produced
+            if upload_mock:
+                ok = _selftest_upload(window, api, lines) and ok
     except Exception as e:  # noqa: BLE001
         ok = False
         lines.append(f"error={e!r}")
     finally:
+        if upload_mock and api.upload_overrides.get("profile"):
+            try:
+                uploader.Browser(Path(api.upload_overrides["profile"])).close()
+            except Exception:  # noqa: BLE001
+                pass
         state["selftest_rc"] = 0 if ok else 1
         head = ("ok" if ok else "FAIL") + f" version={core.VERSION} platform={sys.platform}"
         try:
@@ -436,7 +565,7 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             pass
 
 
-def run(initial_file: Optional[str] = None, selftest: Optional[str] = None) -> int:
+def run(initial_file: Optional[str] = None, selftest: Optional[str] = None, upload_mock: Optional[str] = None) -> int:
     import webview
     from webview.dom import DOMEventHandler
 
@@ -451,6 +580,15 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None) -> i
             raise ModernUnavailable("webview2", f"renderer={renderer}")
 
     api = Api()
+    scratch: Optional[tempfile.TemporaryDirectory] = None
+    if selftest and upload_mock:
+        # the self-test posts to the mock TikTok page with a throw-away browser profile
+        scratch = tempfile.TemporaryDirectory(prefix="tiktokhq_selftest_", ignore_cleanup_errors=True)
+        api.upload_overrides = {
+            "url": Path(upload_mock).resolve().as_uri(), "mock": True, "profile": str(Path(scratch.name) / "profile"),
+            "login_timeout": 60.0, "upload_timeout": 120.0, "watch_timeout": 120.0,
+            "debug_root": str(Path(selftest).resolve().parent / "upload-debug"),
+        }
     window = webview.create_window(
         APP_TITLE, url=str(html), js_api=api,
         width=1040, height=760, min_size=(860, 620),
@@ -497,10 +635,14 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None) -> i
 
     func, args = None, None
     if selftest:
-        func, args = _selftest, (window, api, selftest, initial_file, state)
+        func, args = _selftest, (window, api, selftest, initial_file, state, upload_mock)
     elif os.name == "nt":
         func = watchdog
-    webview.start(func=func, args=args, debug=bool(os.environ.get("TIKTOKHQ_DEBUG")), private_mode=True)
+    try:
+        webview.start(func=func, args=args, debug=bool(os.environ.get("TIKTOKHQ_DEBUG")), private_mode=True)
+    finally:
+        if scratch is not None:
+            scratch.cleanup()
     if state["dead"]:
         raise ModernUnavailable("noload", f"the page did not load within {LOAD_TIMEOUT:.0f} s")
     return int(state["selftest_rc"]) if selftest else 0

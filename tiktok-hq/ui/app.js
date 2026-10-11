@@ -27,7 +27,7 @@
       n4: 'انشره أول شي بخصوصية (Only you) وانتظر 5 دقايق.',
       n5: 'تأكد من الجودة من جهاز أو حساب ثاني، أو من بوت الفحص، ثم خلّه للكل.',
       err_title: 'ما اكتمل', log: 'السجل التفصيلي',
-      foot: 'يشتغل على جهازك بالكامل. ما يطلع شي للإنترنت.',
+      foot: 'التجهيز على جهازك بالكامل. الرفع يصير من متصفحك أنت لحسابك في تيك توك.',
       // dynamic
       plan_copy: 'بدون إعادة ترميز: الصورة تنسخ مثل ما هي',
       plan_encode: 'بيعاد ترميز الفيديو (مرة وحدة بجودة عالية)',
@@ -54,6 +54,38 @@
       w_fps_low: '{0} إطار بالثانية أقل من الحد الأدنى عند تيك توك (23)', w_res_low: 'الدقة {0}×{1} أقل من الحد الأدنى (360 بكسل)',
       w_letterbox: 'المقاس {0}×{1} مو 9:16، تيك توك بيضيف حواف (ما تأثر على الجودة)',
       w_level: 'مستوى H.264 {0} أعلى من 4.2', w_vfr: 'معدل الإطارات متغير (شائع في تسجيل الشاشة). إذا تيك توك أعاد ضغطه فعّل إعادة الضغط الإجبارية',
+      // posting on TikTok (the app fills the form in the browser, the user presses Post)
+      post_title: 'النشر على تيك توك',
+      auto_upload: 'بعد التجهيز افتح تيك توك وعبّي المنشور تلقائيًا (أنت تضغط "نشر")',
+      privacy: 'من يقدر يشوف الفيديو', p_only_me: 'أنت فقط', p_only_me_s: 'موصى بها أول مرة', p_friends: 'الأصدقاء', p_everyone: 'الكل',
+      caption: 'الوصف', caption_ph: 'الوصف والهاشتاقات (اختياري)',
+      post_hint: 'أول مرة بتسجّل دخولك لتيك توك في نافذة المتصفح اللي تنفتح، ويبقى محفوظ للمرات الجاية. البرنامج ما يضغط "نشر" أبد: أنت تراجع وتنشر.',
+      no_browser_hint: 'ما لقينا Microsoft Edge ولا Google Chrome على الجهاز، والنشر التلقائي يحتاج واحد منهم.',
+      upload_now: 'جهّز المنشور على تيك توك', up_stop: 'إيقاف', up_retry: 'حاول مرة ثانية', up_debug: 'ملفات التشخيص',
+      u1: 'فتح المتصفح', u2: 'تسجيل الدخول', u3: 'رفع الملف', u4: 'الوصف والخصوصية', u5: 'ضغطتك على "نشر"',
+      up_t_running: 'نجهّز منشورك على تيك توك',
+      up_browser: 'نفتح نافذة المتصفح…', up_login: 'ننتظر صفحة الرفع في تيك توك…',
+      up_login_needed: 'سجّل دخولك لتيك توك في نافذة المتصفح اللي انفتحت. ننتظرك، وبعدها نكمل لحالنا.',
+      up_attach: 'نرسل الملف لصفحة الرفع…', up_uploading: 'تيك توك يستقبل الملف…', up_caption: 'نكتب الوصف…', up_privacy: 'نضبط الخصوصية…',
+      up_t_ready: 'باقي ضغطتك على "نشر"',
+      up_ready: 'روح لنافذة المتصفح: الملف مرفوع والوصف مكتوب والخصوصية "{0}". راجع المنشور واضغط "نشر" (Post) بنفسك.',
+      up_t_posted: 'تم النشر', up_posted: 'انتظر 5 دقايق وتأكد من الجودة من جهاز أو حساب ثاني.',
+      up_posted_private: 'المنشور خاص (أنت فقط). انتظر 5 دقايق وتأكد من الجودة، ثم خلّه للكل من تيك توك.',
+      up_t_not_seen: 'ما شفنا تأكيد النشر', up_not_seen: 'إذا نشرته فكل شي تمام. وإذا لا، المنشور باقي جاهز في نافذة المتصفح.',
+      up_t_closed: 'انقفلت نافذة المتصفح', up_closed: 'انقفلت قبل ما نشوف تأكيد النشر. إذا ما نشرت، اضغط "حاول مرة ثانية".',
+      up_t_stopped: 'وقفنا المتابعة', up_stopped: 'المنشور باقي جاهز في نافذة المتصفح وتقدر تنشره منها.',
+      up_t_cancelled: 'وقفنا', up_cancelled: 'نافذة المتصفح باقية: تقدر تكمل منها بنفسك أو تقفلها.',
+      up_t_error: 'ما كمل تجهيز المنشور',
+      ue_no_browser: 'ما لقينا Microsoft Edge ولا Google Chrome على جهازك. ثبّت واحد منهم وجرّب مرة ثانية.',
+      ue_login_timeout: 'ما تم تسجيل الدخول في الوقت المحدد. سجّل دخولك في نافذة المتصفح واضغط "حاول مرة ثانية".',
+      ue_upload_timeout: 'تيك توك ما خلّص استقبال الملف في الوقت المحدد. تأكد من الإنترنت وجرّب مرة ثانية.',
+      ue_caption_mismatch: 'ما قدرنا نكتب الوصف مثل ما هو، فوقفنا قبل ما نسلّمك المنشور. اكتبه بنفسك في المتصفح.',
+      ue_privacy: 'ما قدرنا نتأكد من الخصوصية، فوقفنا قبل ما نسلّمك المنشور. اختر الخصوصية بنفسك في المتصفح قبل النشر.',
+      ue_post_button_unavailable: 'زر النشر في تيك توك مو جاهز. شيّك على الصفحة في نافذة المتصفح.',
+      ue_browser_closed: 'انقفلت نافذة المتصفح قبل ما نكمل.',
+      ue_browser: 'ما قدرنا نفتح المتصفح.',
+      ue_generic: 'وقف عند خطوة "{0}": {1}',
+      upload_busy: 'فيه منشور ثاني نجهّزه الحين', multi_no_upload: 'النشر التلقائي يشتغل لما يطلع ملف واحد بس (مو "كل الطرق").',
     },
     en: {
       title: 'Prepare a video so TikTok serves it at its original quality',
@@ -78,7 +110,7 @@
       n4: 'Post as "Only you" first and wait 5 minutes.',
       n5: 'Judge the quality from another device or account, or with the checker bot, then make it public.',
       err_title: 'Not completed', log: 'Detailed log',
-      foot: 'Runs entirely on your computer. Nothing is sent to the internet.',
+      foot: 'Preparing runs entirely on your computer. Uploading goes through your own browser to your TikTok account.',
       plan_copy: 'No re-encode: the picture is copied as is',
       plan_encode: 'The video will be re-encoded (once, high quality)',
       plan_audio_copy: 'Audio kept as is', plan_audio_encode: 'Audio converted to AAC', plan_audio_silent: 'A silent track will be added',
@@ -103,11 +135,44 @@
       w_fps_low: '{0} fps is below TikTok\'s minimum (23)', w_res_low: '{0}×{1} is below the minimum (360 px)',
       w_letterbox: '{0}×{1} is not 9:16, TikTok adds borders (no quality impact)',
       w_level: 'H.264 level {0} is above 4.2', w_vfr: 'variable frame rate (screen recordings often are). If TikTok re-encodes it, use force re-encode',
+      post_title: 'Posting on TikTok',
+      auto_upload: 'After preparing, open TikTok and fill in the post automatically (you press "Post")',
+      privacy: 'Who can watch this video', p_only_me: 'Only you', p_only_me_s: 'recommended at first', p_friends: 'Friends', p_everyone: 'Everyone',
+      caption: 'Caption', caption_ph: 'Caption and hashtags (optional)',
+      post_hint: 'The first time, log in to TikTok in the browser window that opens; it stays logged in for next time. The app never presses "Post": you review and post.',
+      no_browser_hint: 'Microsoft Edge or Google Chrome was not found; automatic posting needs one of them.',
+      upload_now: 'Set up the post on TikTok', up_stop: 'Stop', up_retry: 'Try again', up_debug: 'Diagnostic files',
+      u1: 'Open browser', u2: 'Log in', u3: 'Upload file', u4: 'Caption & privacy', u5: 'You press "Post"',
+      up_t_running: 'Setting up your TikTok post',
+      up_browser: 'Opening the browser window…', up_login: 'Waiting for TikTok\'s upload page…',
+      up_login_needed: 'Log in to TikTok in the browser window that opened. We wait, then carry on by ourselves.',
+      up_attach: 'Sending the file to the upload page…', up_uploading: 'TikTok is receiving the file…', up_caption: 'Writing the caption…', up_privacy: 'Setting the privacy…',
+      up_t_ready: 'Your turn: press "Post"',
+      up_ready: 'Go to the browser window: the file is uploaded, the caption written and the privacy set to "{0}". Review the post and press "Post" yourself.',
+      up_t_posted: 'Posted', up_posted: 'Wait 5 minutes and judge the quality from another device or account.',
+      up_posted_private: 'The post is private (Only you). Wait 5 minutes, judge the quality, then make it public in TikTok.',
+      up_t_not_seen: 'No post confirmation seen', up_not_seen: 'If you posted it, all is well. If not, the post is still ready in the browser window.',
+      up_t_closed: 'The browser window was closed', up_closed: 'It closed before a post confirmation showed up. If you did not post, press "Try again".',
+      up_t_stopped: 'Stopped watching', up_stopped: 'The post is still ready in the browser window; you can post it from there.',
+      up_t_cancelled: 'Stopped', up_cancelled: 'The browser window stays open: carry on there yourself or close it.',
+      up_t_error: 'The post was not set up',
+      ue_no_browser: 'Microsoft Edge or Google Chrome was not found on this computer. Install one and try again.',
+      ue_login_timeout: 'No login within the time limit. Log in in the browser window, then press "Try again".',
+      ue_upload_timeout: 'TikTok did not finish receiving the file in time. Check the connection and try again.',
+      ue_caption_mismatch: 'The caption could not be written exactly, so we stopped before handing over. Type it yourself in the browser.',
+      ue_privacy: 'The privacy setting could not be confirmed, so we stopped before handing over. Choose it yourself in the browser before posting.',
+      ue_post_button_unavailable: 'TikTok\'s Post button is not ready. Check the page in the browser window.',
+      ue_browser_closed: 'The browser window was closed before we finished.',
+      ue_browser: 'The browser could not be opened.',
+      ue_generic: 'Stopped at step "{0}": {1}',
+      upload_busy: 'Another post is being set up right now', multi_no_upload: 'Automatic posting works when a single file comes out (not "All methods").',
     }
   };
 
   var state = { lang: 'ar', theme: 'dark', file: null, busy: false, what: '', outDir: null, prefs: {},
-    pollTimer: null, polling: false, logOpen: false };
+    pollTimer: null, polling: false, logOpen: false,
+    // upload to TikTok: uploading = a run is going on; up = what the upload card shows (re-rendered on language change)
+    uploading: false, upFile: null, up: null, outputs: [] };
 
   function $(id) { return document.getElementById(id); }
   function t(key) { var d = STR[state.lang] || STR.ar; return d[key] !== undefined ? d[key] : (STR.ar[key] !== undefined ? STR.ar[key] : key); }
@@ -128,6 +193,7 @@
     for (var k = 0; k < arias.length; k++) arias[k].setAttribute('aria-label', t(arias[k].getAttribute('data-i18n-aria')));
     $('lang-label').textContent = state.lang === 'ar' ? 'EN' : 'ع';
     if (state.file) renderFile(state.file);
+    if (state.up) renderUpload();
   }
   function applyTheme(theme) {
     state.theme = theme === 'light' ? 'light' : 'dark';
@@ -135,6 +201,7 @@
   }
   function savePrefs() {
     state.prefs.lang = state.lang; state.prefs.theme = state.theme; state.prefs.outDir = $('outdir').value || '';
+    state.prefs.autoUpload = $('auto-upload').checked; state.prefs.privacy = segValue('privacy') || 'only_me';
     api().set_prefs(state.prefs).then(null, function () {});
   }
 
@@ -205,7 +272,10 @@
       state.file = info; renderFile(info);
     }, function (e) { toast(t('bridge_error') + ': ' + errText(e), 6000); });
   }
-  function hideResults() { show('result', false); show('error', false); show('verdict', false); show('progress', false); }
+  function hideResults() {
+    show('result', false); show('error', false); show('verdict', false); show('progress', false);
+    if (!state.uploading) { show('upload', false); state.up = null; }
+  }
 
   // --------------------------------------------------------------- options
   function segValue(id) { var a = $(id).querySelector('.seg.active'); return a ? a.getAttribute('data-value') : null; }
@@ -263,6 +333,7 @@
     if (state.busy) { toast(t('busy')); return; }
     if (!state.file) { toast(t('no_file')); return; }
     var opts = { method: segValue('method') || 'audio', tags: segValue('tags') || 'replica', force_encode: $('force').checked, out_dir: $('outdir').value.trim() || null };
+    state.outputs = []; refreshUploadButton();
     savePrefs();
     startJob('prep', api().prepare(state.file.path, opts));
   }
@@ -286,6 +357,99 @@
     }, function (e) { toast(t('bridge_error') + ': ' + errText(e), 6000); });
   }
 
+  // ---------------------------------------------------------------- upload
+  // The app opens TikTok's upload page in the user's browser, attaches the file and fills caption + privacy;
+  // the user presses "Post" there. Stages come from tiktok_hq_upload (browser, login, attach, uploading,
+  // details, ready) and the run ends with posted / not_seen / closed / stopped / cancelled / error.
+  var UP_STEP = { browser: 1, login: 2, attach: 3, uploading: 3, details: 4, ready: 5 };
+  var UP_ERR = { no_browser: 'ue_no_browser', login_timeout: 'ue_login_timeout', upload_timeout: 'ue_upload_timeout',
+    caption_mismatch: 'ue_caption_mismatch', privacy_not_found: 'ue_privacy', privacy_not_confirmed: 'ue_privacy',
+    post_button_unavailable: 'ue_post_button_unavailable', browser_closed: 'ue_browser_closed' };
+  function privacyName(v) { return t('p_' + (v || 'only_me')); }
+  function upOptions() { return { privacy: segValue('privacy') || 'only_me', caption: $('caption').value || '' }; }
+  function startUpload(path) {
+    if (!path) return;
+    if (state.uploading) { toast(t('upload_busy')); return; }
+    var opts = upOptions();
+    state.uploading = true; state.upFile = path;
+    state.up = { state: 'running', stage: 'browser', detail: '', privacy: opts.privacy, name: path.split(/[\\/]/).pop() };
+    renderUpload();
+    var name = state.up.name;
+    api().upload(path, opts).then(function (r) {
+      if (r && r.started) return;
+      state.uploading = false; refreshUploadButton();
+      if (r && r.error === 'upload_busy') { toast(t('upload_busy')); state.up = null; show('upload', false); return; }
+      state.up = { state: 'error', step: '', message: (r && r.error) || t('bridge_error'), privacy: opts.privacy, name: name };
+      renderUpload();
+    }, function (e) {
+      state.uploading = false; refreshUploadButton();
+      state.up = { state: 'error', step: '', message: t('bridge_error') + ': ' + errText(e), privacy: opts.privacy, name: name };
+      renderUpload();
+    });
+    refreshUploadButton();
+  }
+  function upErrorText(u) {
+    var key = UP_ERR[u.message];
+    if (key) return t(key);
+    if (u.step === 'browser') return t('ue_browser') + (u.message ? ' (' + u.message + ')' : '');
+    return fmt(t('ue_generic'), [u.step ? t('u' + (UP_STEP[u.step] || 1)) : '—', u.message || '']);
+  }
+  function renderUpload() {
+    var u = state.up; if (!u) return;
+    var card = $('upload'); card.setAttribute('data-state', u.state); show('upload', true);
+    var running = u.state === 'running' || u.state === 'ready';
+    var n = u.state === 'running' || u.state === 'ready' ? (UP_STEP[u.stage] || 1) : (u.state === 'posted' ? 6 : (UP_STEP[u.step] || 0));
+    var steps = card.querySelectorAll('.step');
+    for (var i = 0; i < steps.length; i++) {
+      var k = i + 1;
+      steps[i].classList.toggle('done', k < n || u.state === 'posted');
+      steps[i].classList.toggle('active', running && k === n);
+      steps[i].classList.toggle('fail', u.state === 'error' && k === n);
+    }
+    var title = '', text = '';
+    if (u.state === 'running') {
+      title = t('up_t_running');
+      if (u.stage === 'login') text = u.detail === 'login_needed' || u.loginNeeded ? t('up_login_needed') : t('up_login');
+      else if (u.stage === 'uploading') text = t('up_uploading') + (u.detail ? '  ' + u.detail : '');
+      else if (u.stage === 'details') text = u.detail === 'privacy' ? t('up_privacy') : t('up_caption');
+      else text = t('up_' + u.stage);
+    } else if (u.state === 'ready') { title = t('up_t_ready'); text = fmt(t('up_ready'), [privacyName(u.privacy)]); }
+    else if (u.state === 'posted') { title = t('up_t_posted'); text = u.privacy === 'only_me' ? t('up_posted_private') : t('up_posted'); }
+    else if (u.state === 'error') { title = t('up_t_error'); text = upErrorText(u); }
+    else { title = t('up_t_' + u.state); text = t('up_' + u.state); }
+    $('up-title').textContent = title; $('up-text').textContent = text; $('up-file').textContent = u.name || '';
+    show('btn-up-stop', running);
+    show('btn-up-retry', !running && u.state !== 'posted' && u.state !== 'not_seen' && u.state !== 'stopped');
+    show('btn-up-debug', u.state === 'error' && !!u.debug_dir);
+  }
+  function refreshUploadButton() {
+    var single = state.outputs.length === 1;
+    show('btn-upload', single && !$('auto-upload').checked);
+    $('btn-upload').disabled = state.uploading;
+  }
+  function onUploadEvent(ev) {
+    if (ev.kind === 'upload_start') {
+      state.uploading = true;
+      if (!state.up) state.up = { name: ev.name, privacy: ev.privacy };
+      state.up.state = 'running'; state.up.stage = 'browser'; state.up.detail = ''; state.up.loginNeeded = false;
+    } else if (ev.kind === 'upload_stage') {
+      if (!state.up) return;
+      if (ev.stage === 'ready') { state.up.state = 'ready'; state.up.stage = 'ready'; }
+      else if (UP_STEP[ev.stage]) {
+        state.up.state = 'running'; state.up.stage = ev.stage; state.up.detail = ev.detail || '';
+        if (ev.stage === 'login' && ev.detail === 'login_needed') state.up.loginNeeded = true;
+      } else return;  // the final state comes with upload_done
+    } else if (ev.kind === 'upload_done') {
+      state.uploading = false;
+      var prev = state.up || {};
+      state.up = { state: ev.state || 'error', step: ev.step || prev.stage || '', message: ev.message || '',
+        debug_dir: ev.debug_dir || null, privacy: ev.privacy || prev.privacy, name: prev.name };
+      if (ev.state === 'posted') toast(t('up_t_posted'), 3000);
+      refreshUploadButton();
+    }
+    renderUpload();
+  }
+
   // ----------------------------------------------------------------- events
   function handle(ev) {
     switch (ev.kind) {
@@ -303,6 +467,7 @@
       case 'file': setFile(ev.path); break;
       case 'file_nopath': toast(t('drop_nopath'), 5000); break;
       case 'done': onDone(ev); break;
+      case 'upload_start': case 'upload_stage': case 'upload_done': onUploadEvent(ev); break;
     }
   }
   function onDone(ev) {
@@ -312,8 +477,14 @@
         var steps = $('progress').querySelectorAll('.step'); for (var i = 0; i < steps.length; i++) { steps[i].classList.add('done'); steps[i].classList.remove('active'); }
         $('bar-fill').classList.remove('indeterminate'); $('bar-fill').style.width = '100%'; $('status').textContent = '';
         state.outDir = ev.out_dir;
-        $('outputs').textContent = (ev.outputs || []).join('\n');
+        state.outputs = ev.outputs || [];
+        $('outputs').textContent = state.outputs.join('\n');
         show('result', true);
+        refreshUploadButton();
+        if ($('auto-upload').checked) {
+          if (state.outputs.length === 1) startUpload(state.outputs[0]);
+          else if (state.outputs.length > 1) toast(t('multi_no_upload'), 5000);
+        }
       } else { show('progress', false); showError($('error-text').textContent || t('error_generic')); }
     } else if (ev.what === 'compare') {
       if (!ev.verdict) { showError($('error-text').textContent || t('compare_failed')); return; }
@@ -371,6 +542,12 @@
       $('log-chev').classList.toggle('open', state.logOpen);
       $('btn-log').setAttribute('aria-expanded', state.logOpen ? 'true' : 'false');
     });
+    wireSegmented('privacy', function () { savePrefs(); });
+    $('auto-upload').addEventListener('change', function () { refreshUploadButton(); savePrefs(); });
+    $('btn-upload').addEventListener('click', function () { if (state.outputs.length === 1) startUpload(state.outputs[0]); });
+    $('btn-up-stop').addEventListener('click', function () { api().cancel_upload().then(null, function () {}); });
+    $('btn-up-retry').addEventListener('click', function () { if (state.upFile) startUpload(state.upFile); });
+    $('btn-up-debug').addEventListener('click', function () { if (state.up && state.up.debug_dir) api().open_folder(state.up.debug_dir).then(null, function () {}); });
     $('btn-theme').addEventListener('click', function () { applyTheme(state.theme === 'dark' ? 'light' : 'dark'); savePrefs(); });
     $('btn-lang').addEventListener('click', function () { applyLang(state.lang === 'ar' ? 'en' : 'ar'); savePrefs(); });
   }
@@ -381,11 +558,15 @@
       applyTheme(state.prefs.theme || 'dark');
       applyLang(state.prefs.lang || 'ar');
       if (state.prefs.outDir) $('outdir').value = state.prefs.outDir;
+      if (state.prefs.autoUpload === false) $('auto-upload').checked = false;
+      if (state.prefs.privacy && $('privacy').querySelector('[data-value="' + state.prefs.privacy + '"]')) setSeg('privacy', state.prefs.privacy);
+      refreshUploadButton();
     }, function () {});
     api().info().then(function (info) {
       $('version').textContent = 'v' + info.version;
       if (!info.tools_ok) { toast(t('tools_missing'), 8000); appendLog('ERROR: ' + (info.tools_error || '')); openLog(); }
       else { $('tools-line').textContent = 'ffmpeg: ' + info.ffmpeg; }
+      show('no-browser', !info.browser);
     }, function (e) { appendLog('ERROR: ' + errText(e)); openLog(); });
     schedulePoll(200);
   }
