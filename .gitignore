@@ -3,3 +3,8 @@ __pycache__/
 *_TikTokHQ*.mp4
 .DS_Store
 Thumbs.db
+tiktok-hq/bin/
+tiktok-hq/build/
+tiktok-hq/dist/
+tiktok-hq/out/
+tiktok-hq/smoke.txt

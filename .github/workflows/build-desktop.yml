@@ -1,0 +1,292 @@
+name: Build desktop app
+
+# Builds the TikTok HQ desktop app (tiktok-hq/) with PyInstaller on Windows and
+# macOS, with static ffmpeg/ffprobe inside. Every push that touches tiktok-hq/
+# builds and keeps the files as workflow artifacts; when VERSION in
+# tiktok_hq.py has no tag yet (or a "v*" tag is pushed) the files are published
+# on a GitHub Release.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "tiktok-hq/**"
+      - ".github/workflows/build-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # static ffmpeg + ffprobe builds (FFmpeg 6.1.1) from github.com/eugeneware/ffmpeg-static
+  FFMPEG_STATIC_TAG: b6.1.1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            plat: win32-x64
+            ext: ".exe"
+            artifact: TikTokHQ-windows
+          - os: macos-latest
+            plat: darwin-arm64
+            ext: ""
+            artifact: TikTokHQ-macos-apple-silicon
+          - os: macos-15-intel
+            plat: darwin-x64
+            ext: ""
+            artifact: TikTokHQ-macos-intel
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: tiktok-hq
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download static ffmpeg + ffprobe
+        env:
+          PLAT: ${{ matrix.plat }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          for t in ffmpeg ffprobe; do
+            url="https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_STATIC_TAG}/${t}-${PLAT}.gz"
+            echo "fetching $url"
+            curl -fsSL --retry 4 --retry-delay 5 -o "bin/${t}.gz" "$url"
+            gunzip -f "bin/${t}.gz"
+            if [ -n "$EXT" ]; then mv -f "bin/${t}" "bin/${t}${EXT}"; fi
+            chmod +x "bin/${t}${EXT}"
+          done
+          ls -la bin
+          "./bin/ffmpeg${EXT}" -version | head -n 2
+          "./bin/ffprobe${EXT}" -version | head -n 1
+          # the tool needs libx264 + aac (encode path) and zscale (HDR tonemap)
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -E "libx264|aac"
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " libx264 "
+          "./bin/ffmpeg${EXT}" -hide_banner -encoders 2>/dev/null | grep -q " aac "
+          "./bin/ffmpeg${EXT}" -hide_banner -filters 2>/dev/null | grep -q " zscale " || echo "::warning::zscale filter missing: HDR sources will use the fallback tonemap path"
+
+      - name: Unit tests (bundled ffmpeg on PATH, the runner's Edge/Chrome for the upload tests)
+        env:
+          # headless here; the self-tests of the built app below use a normal browser window
+          TIKTOKHQ_BROWSER_ARGS: ${{ runner.os == 'macOS' && '--headless=new --use-mock-keychain' || '--headless=new' }}
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "pywebview>=6,<7"
+          python -c "import tiktok_hq_upload as u; print('browser for the upload tests:', u.find_browser())"
+          python -m unittest discover -s tests -v
+
+      - name: Install PyInstaller and the UI toolkit (pywebview)
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "pyinstaller>=6.10,<7" "pywebview>=6,<7"
+          python -c "import webview; from webview import _version as v; print('pywebview', v.__version__)"
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm --clean TikTokHQ.spec
+
+      - name: Smoke test the built app (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          set -euo pipefail
+          ls -la dist
+          rm -f smoke.txt
+          ./dist/TikTokHQ.exe --smoke smoke.txt || true
+          for i in $(seq 1 60); do [ -s smoke.txt ] && break; sleep 1; done
+          cat smoke.txt
+          grep -q "^ok" smoke.txt
+          grep -q "ui=webview:" smoke.txt
+          grep -q "js=ok" smoke.txt
+          grep -q "clr=ok" smoke.txt
+          grep -q "platform=winforms" smoke.txt
+          grep -q "edgechromium=ok" smoke.txt
+
+      - name: Smoke test the built app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          ls -la dist
+          rm -f smoke.txt
+          ./dist/TikTokHQ.app/Contents/MacOS/TikTokHQ --smoke smoke.txt
+          cat smoke.txt
+          grep -q "^ok" smoke.txt
+          grep -q "ui=webview:" smoke.txt
+          grep -q "js=ok" smoke.txt
+          grep -q "platform=cocoa renderer=wkwebview" smoke.txt
+
+      - name: Ensure the WebView2 runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $id = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$id",
+                    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$id",
+                    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$id")
+          $pv = $null
+          foreach ($k in $keys) { if (Test-Path $k) { $v = (Get-ItemProperty $k).pv; if ($v -and $v -ne '0.0.0.0') { $pv = $v; break } } }
+          if ($pv) { "WebView2 runtime present: $pv" } else {
+            "WebView2 runtime missing on the runner: installing the Evergreen runtime"
+            $setup = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $setup
+            Start-Process -FilePath $setup -ArgumentList '/silent', '/install' -Wait
+          }
+
+      - name: UI self-test of the built app (real window, prepares a clip and sets up the post on the mock page)
+        timeout-minutes: 10
+        env:
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          "./bin/ffmpeg${EXT}" -hide_banner -v error -y -f lavfi -i testsrc2=size=640x1136:rate=30:duration=2 \
+            -f lavfi -i sine=frequency=440:duration=2:sample_rate=48000 -c:v libx264 -pix_fmt yuv420p \
+            -c:a aac -shortest -movflags +faststart selftest_clip.mp4
+          rm -f ui.txt selftest_clip_TikTokHQ.mp4
+          pid=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./dist/TikTokHQ.exe --selftest-ui ui.txt selftest_clip.mp4 --upload-mock tests/fixtures/mock_studio.html &
+            pid=$!
+          else
+            # started the way Finder starts apps (LaunchServices, so the app is activated like for a user);
+            # it then runs in "/", hence the absolute paths
+            open -n -a "$PWD/dist/TikTokHQ.app" --env "TIKTOKHQ_BROWSER_ARGS=--use-mock-keychain" --args \
+              --selftest-ui "$PWD/ui.txt" "$PWD/selftest_clip.mp4" --upload-mock "$PWD/tests/fixtures/mock_studio.html"
+          fi
+          for i in $(seq 1 480); do grep -q "^done" ui.txt 2>/dev/null && break; sleep 1; done
+          cat ui.txt || echo "no ui.txt written"
+          if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+          if ! grep -q "^ok" ui.txt; then
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              ps -axo pid,etime,comm | grep -i -E "chrome|tiktokhq|webkit" || true
+              # a crashed web page process leaves a report here
+              for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+                ls -t "$d" 2>/dev/null | grep -i -E "webkit|webcontent|tiktokhq" | head -n 3 | while read -r f; do
+                  echo "=== $d/$f"
+                  head -n 1 "$d/$f" | cut -c1-600
+                  grep -o -E '"(exception|termination)":\{[^}]*\}' "$d/$f" | head -n 4 || true
+                  grep -o -E '"symbol":"[^"]*"' "$d/$f" | head -n 40 || true
+                done || true
+              done
+            fi
+            exit 1
+          fi
+          grep -q "upload_checks=.*noticed:ok" ui.txt
+          test -s selftest_clip_TikTokHQ.mp4
+
+      - name: Upload self-test of the built app (browser fills the mock TikTok page; Post is left to the user)
+        timeout-minutes: 6
+        env:
+          TIKTOKHQ_BROWSER_ARGS: ${{ runner.os == 'macOS' && '--use-mock-keychain' || '' }}
+        run: |
+          set -euo pipefail
+          rm -f upload.txt
+          if [ "$RUNNER_OS" = "Windows" ]; then APP=./dist/TikTokHQ.exe; else APP=./dist/TikTokHQ.app/Contents/MacOS/TikTokHQ; fi
+          "$APP" --selftest-upload upload.txt tests/fixtures/mock_studio.html selftest_clip.mp4 &
+          pid=$!
+          for i in $(seq 1 300); do grep -q "^done" upload.txt 2>/dev/null && break; sleep 1; done
+          cat upload.txt || echo "no upload.txt written"
+          kill "$pid" 2>/dev/null || true
+          grep -q "^ok" upload.txt
+
+      - name: Window self-test after a browser session (the window opens again after Chrome/Edge has run)
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          rm -f again.txt
+          pid=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./dist/TikTokHQ.exe --selftest-ui again.txt &
+            pid=$!
+          else
+            open -n -a "$PWD/dist/TikTokHQ.app" --args --selftest-ui "$PWD/again.txt"
+          fi
+          for i in $(seq 1 150); do grep -q "^done" again.txt 2>/dev/null && break; sleep 1; done
+          cat again.txt || echo "no again.txt written"
+          if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+          grep -q "^ok" again.txt
+
+      - name: Package
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/TikTokHQ.exe "out/${ARTIFACT}.exe"
+          else
+            ditto -c -k --sequesterRsrc --keepParent dist/TikTokHQ.app "out/${ARTIFACT}.zip"
+          fi
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: tiktok-hq/out/*
+          if-no-files-found: error
+
+  release:
+    # Publishes a GitHub Release with the three files when the version in
+    # tiktok_hq.py (VERSION = "x.y.z") has no "vx.y.z" tag yet, or when a v* tag
+    # was pushed. The release creates the tag itself, so nobody has to push tags.
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            v=$(sed -nE 's/^VERSION = "([^"]+)"/\1/p' tiktok-hq/tiktok_hq.py | head -n 1)
+            tag="v$v"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "tag $tag already exists: nothing to publish (bump VERSION in tiktok_hq.py to release)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "releasing $tag from $GITHUB_SHA"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          path: out
+          merge-multiple: true
+
+      - run: ls -la out
+        if: steps.tag.outputs.skip == 'false'
+
+      - uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: TikTok HQ ${{ steps.tag.outputs.tag }}
+          files: out/*
+          make_latest: true
+          body: |
+            برنامج سطح مكتب جاهز، ما يحتاج تثبيت Python ولا ffmpeg.
+
+            - **Windows**: نزّل `TikTokHQ-windows.exe` وافتحه. أول مرة يطلع تحذير SmartScreen: اضغط **More info** ثم **Run anyway**.
+            - **Mac بمعالج Apple (M1/M2/M3/M4)**: نزّل `TikTokHQ-macos-apple-silicon.zip`، فكّه، وانقل التطبيق لمجلد Applications.
+            - **Mac بمعالج Intel**: نزّل `TikTokHQ-macos-intel.zip`.
+            - على Mac أول فتح: إذا طلع "cannot be opened"، افتح System Settings → Privacy & Security، وانزل تحت واضغط **Open Anyway**.
+
+            Ready-made desktop app: no Python or ffmpeg install needed. See tiktok-hq/README.md for the full guide.

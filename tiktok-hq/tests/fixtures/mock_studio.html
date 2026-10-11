@@ -1,0 +1,123 @@
+<!doctype html>
+<!-- Test double of the TikTok Studio upload page (structure modelled on the selectors open-source
+     uploaders use in 2026). Used by tests and the CI self-test; never shipped as a real target.
+     Every press of the Post button is logged ("post-click"): the app must never press it, the user does.
+     window.__form() reads the filled form; window.__simulateUserPost() stands in for the user's own
+     Post + "Post now" (the tests call it to check that the app notices a finished post).
+     ?noprivate=1 removes the "Only you" choice (the app must then stop before the hand-over). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock TikTok Studio upload</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 20px 20px 140px; }
+  .hidden { display: none !important; }
+  #drop { border: 2px dashed #aaa; padding: 30px; text-align: center; }
+  .public-DraftEditor-content { border: 1px solid #999; min-height: 40px; padding: 6px; }
+  [role=listbox] { border: 1px solid #333; background: #fff; position: absolute; z-index: 5; }
+  [role=option] { padding: 6px 14px; cursor: pointer; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal > div { background: #fff; padding: 24px; }
+  tiktok-cookie-banner { position: fixed; left: 0; right: 0; bottom: 0; height: 120px; background: #222; color: #fff; z-index: 40; display: block; padding: 10px; }
+  #postbar { margin-top: 40px; }
+  button[data-disabled="true"] { opacity: .4; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="login" >Log in to TikTok to continue</div>
+  <div id="studio" class="hidden">
+    <h1>Upload video</h1>
+    <div id="drop">Select video to upload <input type="file" accept="video/*" id="file" style="display:none"></div>
+    <div id="progress" class="hidden">Uploading <span id="pct">0%</span></div>
+    <div id="details" class="hidden">
+      <div class="resolution-label-text">1080p</div>
+      <label>Description</label>
+      <div class="public-DraftEditor-content" contenteditable="true" id="caption"></div>
+      <div data-e2e="video_visibility_container" style="position:relative; margin-top: 16px;">
+        <span>Who can watch this video</span>
+        <button role="combobox" aria-expanded="false" id="vis"><span id="visval">Everyone</span></button>
+        <div role="listbox" id="opts" class="hidden">
+          <div role="option">Everyone</div>
+          <div role="option">Friends</div>
+          <div role="option">Only you</div>
+        </div>
+      </div>
+    </div>
+    <div id="postbar">
+      <button data-e2e="post_video_button" data-disabled="true" class="TUXButton--primary" id="post"><div>Post</div></button>
+    </div>
+    <div id="done" class="hidden">Your video has been uploaded</div>
+  </div>
+</div>
+<tiktok-cookie-banner id="cookies">This site uses cookies
+  <div class="button-wrapper"><button id="decline">Decline optional cookies</button><button id="allow">Allow all</button></div>
+</tiktok-cookie-banner>
+<script>
+  window.__posted = null;
+  window.__events = [];
+  const $ = (id) => document.getElementById(id);
+  const log = (e) => window.__events.push(e);
+  // "user logs in" after a short while
+  setTimeout(() => { $('login').classList.add('hidden'); $('studio').classList.remove('hidden'); log('login'); }, 1500);
+  $('decline').addEventListener('click', () => { $('cookies').remove(); log('cookies-declined'); });
+  $('allow').addEventListener('click', () => { $('cookies').remove(); log('cookies-allowed'); });
+  $('file').addEventListener('change', () => {
+    const f = $('file').files[0];
+    if (!f) return;
+    log('file:' + f.name + ':' + f.size);
+    $('progress').classList.remove('hidden');
+    let p = 0;
+    const t = setInterval(() => {
+      p += 25; $('pct').textContent = p + '%';
+      if (p >= 100) {
+        clearInterval(t);
+        $('progress').classList.add('hidden');
+        $('details').classList.remove('hidden');
+        $('caption').textContent = f.name.replace(/\.[^.]+$/, '');   // TikTok pre-fills the file name
+        $('post').setAttribute('data-disabled', 'false');
+        // a pop-up that covers the page until dismissed
+        const m = document.createElement('div');
+        m.className = 'modal'; m.id = 'splitmodal';
+        m.innerHTML = '<div>Turn on automatic content checks?<br><button id="notnow"><div>Not now</div></button> <button id="turnon">Turn on</button></div>';
+        document.body.appendChild(m);
+        $('notnow').addEventListener('click', () => { m.remove(); log('not-now'); });
+        $('turnon').addEventListener('click', () => { m.remove(); log('turn-on'); });
+      }
+    }, 300);
+  });
+  if (/[?&]noprivate=1/.test(location.search)) {
+    for (const o of document.querySelectorAll('[role=option]')) { if (o.textContent === 'Only you') o.remove(); }
+  }
+  window.__form = () => {
+    const f = $('file').files[0];
+    return { caption: $('caption').innerText, privacy: $('visval').textContent, file: f ? f.name : null,
+             size: f ? f.size : 0, postEnabled: $('post').getAttribute('data-disabled') === 'false',
+             marked: $('post').hasAttribute('data-tiktokhq-ready') };
+  };
+  const finishPost = () => {
+    window.__posted = { caption: $('caption').innerText, privacy: $('visval').textContent, file: $('file').files[0].name, size: $('file').files[0].size };
+    $('details').classList.add('hidden'); $('postbar').classList.add('hidden'); $('drop').classList.add('hidden');
+    $('done').classList.remove('hidden');
+  };
+  window.__simulateUserPost = () => { finishPost(); log('user-posted'); return true; };
+  $('vis').addEventListener('click', () => {
+    const open = $('opts').classList.toggle('hidden') === false;
+    $('vis').setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  for (const o of document.querySelectorAll('[role=option]')) {
+    o.addEventListener('click', () => { $('visval').textContent = o.textContent; $('opts').classList.add('hidden'); $('vis').setAttribute('aria-expanded', 'false'); log('vis:' + o.textContent); });
+  }
+  $('post').addEventListener('click', (ev) => {
+    log('post-click');
+    if ($('post').getAttribute('data-disabled') === 'true') { log('post-while-disabled'); return; }
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = '<div>Continue to post?<br><button id="cancelpost">Cancel</button> <button id="postnow"><div>Post now</div></button></div>';
+    document.body.appendChild(m);
+    $('cancelpost').addEventListener('click', () => { m.remove(); log('cancel'); });
+    $('postnow').addEventListener('click', () => { m.remove(); finishPost(); log('posted'); });
+  });
+</script>
+</body>
+</html>
