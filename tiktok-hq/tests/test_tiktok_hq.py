@@ -4,6 +4,7 @@ Needs ffmpeg + ffprobe on PATH (fixtures are generated with lavfi sources).
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -505,6 +506,33 @@ class ModernUiFilesTests(unittest.TestCase):
                 pat = r"(?:^|[\s{,])%s%s:" % (prefix, re.escape(code))
                 self.assertRegex(ar, pat, f"missing Arabic string {prefix}{code}")
                 self.assertRegex(en, pat, f"missing English string {prefix}{code}")
+
+    def test_inline_page_is_self_contained(self):
+        # macOS gets the page as one string: the stylesheet and the script must be inside it
+        import tiktok_hq_ui as ui
+        page = ui.page_html()
+        css = (HERE.parent / "ui" / "app.css").read_text(encoding="utf-8")
+        js = (HERE.parent / "ui" / "app.js").read_text(encoding="utf-8")
+        self.assertNotIn(ui.CSS_TAG, page)
+        self.assertNotIn(ui.JS_TAG, page)
+        self.assertIn(css.strip()[:200], page)
+        self.assertIn(js.strip()[-200:], page)
+        self.assertEqual(page.count("</script>"), 1)
+        self.assertNotRegex(page, r'(?:src|href)="(?!#)[^"]+\.(?:js|css)"')
+
+    def test_page_mode(self):
+        import tiktok_hq_ui as ui
+        old = os.environ.pop("TIKTOKHQ_PAGE_MODE", None)
+        try:
+            self.assertEqual(ui.page_mode(), "inline" if sys.platform == "darwin" else "server")
+            os.environ["TIKTOKHQ_PAGE_MODE"] = "server"
+            self.assertEqual(ui.page_mode(), "server")
+            os.environ["TIKTOKHQ_PAGE_MODE"] = "nonsense"
+            self.assertEqual(ui.page_mode(), "inline" if sys.platform == "darwin" else "server")
+        finally:
+            os.environ.pop("TIKTOKHQ_PAGE_MODE", None)
+            if old is not None:
+                os.environ["TIKTOKHQ_PAGE_MODE"] = old
 
 
 if __name__ == "__main__":

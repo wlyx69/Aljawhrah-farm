@@ -105,6 +105,35 @@ def ui_dir() -> Path:
     return Path(__file__).resolve().parent / "ui"
 
 
+CSS_TAG = '<link rel="stylesheet" href="app.css">'
+JS_TAG = '<script src="app.js"></script>'
+
+
+def page_html(folder: Optional[Path] = None) -> str:
+    """index.html with app.css and app.js written into it: the whole page as one string.
+
+    macOS loads the page this way (no local web server), see run()."""
+    d = folder or ui_dir()
+    html = (d / "index.html").read_text(encoding="utf-8")
+    if CSS_TAG not in html or JS_TAG not in html:
+        raise RuntimeError("index.html no longer links app.css / app.js the expected way")
+    css = (d / "app.css").read_text(encoding="utf-8")
+    js = (d / "app.js").read_text(encoding="utf-8").replace("</script", "<\\/script")
+    return html.replace(CSS_TAG, "<style>\n" + css + "\n</style>").replace(JS_TAG, "<script>\n" + js + "\n</script>")
+
+
+def page_mode() -> str:
+    """'inline' (the page handed over as one string) on macOS, 'server' (pywebview's 127.0.0.1 server) elsewhere.
+
+    On the macOS build machines the web view's requests to pywebview's local server hang (they time out
+    while the same server answers the app itself), which leaves the window blank; a page handed over as
+    a string needs no request. TIKTOKHQ_PAGE_MODE=inline|server overrides it."""
+    mode = os.environ.get("TIKTOKHQ_PAGE_MODE", "")
+    if mode in ("inline", "server"):
+        return mode
+    return "inline" if sys.platform == "darwin" else "server"
+
+
 def prefs_path() -> Path:
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
@@ -499,10 +528,13 @@ def _mac_load_guard(window: Any, state: dict) -> None:
         if window.events.before_load.wait(RELOAD_AFTER) or state.get("closed"):
             return
         logging.getLogger("pywebview").warning(f"page not loaded {attempt * RELOAD_AFTER:.0f} s after the window "
-                                               f"opened: loading it again ({window.real_url})")
+                                               f"opened: loading it again ({window.real_url or 'inline page'})")
         state["reloads"] = attempt
         try:
-            window.gui.load_url(window.real_url, window.uid)
+            if window.real_url:
+                window.gui.load_url(window.real_url, window.uid)
+            else:
+                window.gui.load_html(window.html, "", window.uid)
         except Exception as e:  # noqa: BLE001
             logging.getLogger("pywebview").warning(f"reload failed: {e!r}")
 
@@ -657,7 +689,8 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             late = ev.loaded.wait(45)
             lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no"))
             raise RuntimeError("the page did not load within 60 s")
-        lines.append(f"load_seconds={time.monotonic() - t0:.1f} reloads={state.get('reloads', 0)}")
+        lines.append(f"load_seconds={time.monotonic() - t0:.1f} reloads={state.get('reloads', 0)} "
+                     f"page={state.get('page_mode', '?')}")
         lines.append(f"renderer={api.renderer}")
         expected = json.dumps("v" + core.VERSION)
         booted = _js_wait(window, f"document.getElementById('version').textContent === {expected} ? 'yes' : ''", 30)
@@ -742,10 +775,13 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None, uplo
             "login_timeout": 60.0, "upload_timeout": 120.0, "watch_timeout": 120.0,
             "debug_root": str(Path(selftest).resolve().parent / "upload-debug"),
         }
+    mode = page_mode()
+    state["page_mode"] = mode
+    source: Dict[str, Any] = {"html": page_html(html.parent)} if mode == "inline" else {"url": str(html)}
     window = webview.create_window(
-        APP_TITLE, url=str(html), js_api=api,
+        APP_TITLE, js_api=api,
         width=1040, height=760, min_size=(860, 620),
-        background_color="#0f1115", text_select=False,
+        background_color="#0f1115", text_select=False, **source,
     )
     api.attach(window)
 

@@ -143,22 +143,6 @@ jobs:
             Start-Process -FilePath $setup -ArgumentList '/silent', '/install' -Wait
           }
 
-      - name: Window with the 2.2.0 page (macOS, diagnostic only)
-        # tells whether the 2.3.0 page or the 2.3.0 app is what keeps the macOS window from loading
-        if: runner.os == 'macOS'
-        continue-on-error: true
-        timeout-minutes: 4
-        run: |
-          set -uo pipefail
-          git fetch -q --no-tags --depth=1 origin 8506a5eb9622120ef8d99107e10d19822309bbab
-          mkdir -p old-ui
-          for f in index.html app.css app.js; do git show "FETCH_HEAD:tiktok-hq/ui/$f" > "old-ui/$f"; done
-          rm -f oldpage.txt
-          open -n -a "$PWD/dist/TikTokHQ.app" --env "TIKTOKHQ_UI_DIR=$PWD/old-ui" --args --selftest-ui "$PWD/oldpage.txt"
-          for i in $(seq 1 170); do grep -q "^done" oldpage.txt 2>/dev/null && break; sleep 1; done
-          cat oldpage.txt || echo "no oldpage.txt written"
-          grep -q "^ok" oldpage.txt
-
       - name: UI self-test of the built app (real window, prepares a clip and sets up the post on the mock page)
         timeout-minutes: 10
         env:
@@ -231,6 +215,20 @@ jobs:
           cat again.txt || echo "no again.txt written"
           if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
           grep -q "^ok" again.txt
+
+      - name: Page through the local server (macOS, diagnostic only)
+        # the app hands the page to the macOS web view as one string; this records whether loading it from
+        # pywebview's 127.0.0.1 server (what 2.2.0 did) works on this runner, without failing the build
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          set -uo pipefail
+          rm -f server.txt
+          open -n -a "$PWD/dist/TikTokHQ.app" --env "TIKTOKHQ_PAGE_MODE=server" --args --selftest-ui "$PWD/server.txt"
+          for i in $(seq 1 170); do grep -q "^done" server.txt 2>/dev/null && break; sleep 1; done
+          cat server.txt || echo "no server.txt written"
+          grep -q "^ok" server.txt
 
       - name: Package
         env:
