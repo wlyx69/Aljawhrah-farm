@@ -402,13 +402,55 @@ class ModernUiApiTests(unittest.TestCase):
 
     def test_progress_percent_from_ffmpeg_time(self):
         api = self.ui.Api()
-        api._duration = 10.0
+        api._job_duration = 10.0
         api._progress("frame=  120 fps=60 q=28.0 size=512kB time=00:00:05.00 bitrate=800kbits/s speed=2x")
         api._progress("")
         ev = api.poll()
         self.assertEqual([e["kind"] for e in ev], ["progress", "progress"])
         self.assertAlmostEqual(ev[0]["pct"], 50.0)
         self.assertIsNone(ev[1]["pct"])
+
+    def test_probe_codes_engine_messages(self):
+        api = self.ui.Api()
+        info = api.probe(str(self.src))          # 640x1136: not 1080x1920 -> letterbox warning
+        codes = [(w["code"], w["args"]) for w in info["warnings_coded"]]
+        self.assertIn(("letterbox", ["640", "1136"]), codes)
+        self.assertEqual(self.ui.coded(["video codec is hevc; TikTok pass-through is only documented for H.264"],
+                                       self.ui.REASON_CODES)[0]["args"], ["hevc"])
+        self.assertIsNone(self.ui.coded(["something new"], self.ui.WARNING_CODES)[0]["code"])
+
+    def test_probe_never_raises(self):
+        import subprocess as sp
+        api = self.ui.Api()
+        old = t.probe
+        def boom(*a, **k):
+            raise sp.TimeoutExpired(cmd="ffprobe", timeout=120)
+        t.probe = boom
+        try:
+            r = api.probe(str(self.src))
+        finally:
+            t.probe = old
+        self.assertFalse(r["ok"])
+        self.assertIn("TimeoutExpired", r["error"])
+
+    def test_bad_options_do_not_start_a_job(self):
+        api = self.ui.Api()
+        r = api.prepare(str(self.src), {"multiplier": "ten"})
+        self.assertFalse(r["started"])
+        self.assertFalse(api.info()["busy"])
+
+    def test_probe_does_not_touch_running_job_progress(self):
+        api = self.ui.Api()
+        api._job_duration = 600.0
+        api.probe(str(self.src))                 # a 2 s clip dropped while a 10 min job runs
+        api._progress("frame=1 time=00:05:00.00 bitrate=1k")
+        self.assertAlmostEqual(api.poll()[-1]["pct"], 50.0)
+
+    def test_failed_compare_has_no_verdict(self):
+        api = self.ui.Api()
+        api.compare(str(self.tmp / "missing.mp4"), str(self.src))
+        done = [e for e in self._drain(api, "done") if e["kind"] == "done"][0]
+        self.assertEqual((done["rc"], done["verdict"], done["error"]), (1, None, True))
 
     def test_drop_event_paths(self):
         api = self.ui.Api()
@@ -448,8 +490,21 @@ class ModernUiFilesTests(unittest.TestCase):
             self.assertIn(k, ar); self.assertIn(k, en)
         self.assertIn('dir="rtl"', html)
         self.assertIn('id="drop"', html)
-        for f in ("app.css", "fallback.html"):
-            self.assertTrue((HERE.parent / "ui" / f).is_file(), f)
+        self.assertTrue((HERE.parent / "ui" / "app.css").is_file())
+        # every t('key') used in app.js exists in both languages
+        for k in set(re.findall(r"\bt\('([^']+)'\)", js)):
+            pat = r"(?:^|[\s{,])(?:'%s'|%s):" % (re.escape(k), re.escape(k))
+            self.assertRegex(ar, pat, f"missing Arabic string {k}")
+            self.assertRegex(en, pat, f"missing English string {k}")
+        # every engine reason/warning code the bridge emits has a translation (hdr/audio have their own chips)
+        import tiktok_hq_ui as ui
+        for prefix, table in (("r_", ui.REASON_CODES), ("w_", ui.WARNING_CODES)):
+            for code, _ in table:
+                if code in ("hdr", "audio"):
+                    continue
+                pat = r"(?:^|[\s{,])%s%s:" % (prefix, re.escape(code))
+                self.assertRegex(ar, pat, f"missing Arabic string {prefix}{code}")
+                self.assertRegex(en, pat, f"missing English string {prefix}{code}")
 
 
 if __name__ == "__main__":

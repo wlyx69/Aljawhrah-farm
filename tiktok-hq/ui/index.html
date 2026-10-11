@@ -33,7 +33,7 @@
       <h1 class="title" data-i18n="title">جهّز الفيديو عشان تيك توك يعرضه بجودته الأصلية</h1>
       <p class="subtitle" data-i18n="subtitle">بدون إعادة ضغط. الصورة والصوت يوصلون للمشاهد مثل ما هم.</p>
 
-      <div class="drop" id="drop" tabindex="0" role="button">
+      <div class="drop" id="drop" tabindex="0" data-i18n-aria="drop_title" aria-label="اسحب الفيديو هنا">
         <div class="drop-inner" id="drop-empty">
           <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path d="M12 16V4m0 0 4 4m-4-4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <div class="drop-text">
@@ -64,17 +64,17 @@
     <section class="card" id="options">
       <div class="row between">
         <h2 class="h2" data-i18n="options">الإعدادات</h2>
-        <button class="link-btn" id="btn-advanced" type="button"><span data-i18n="advanced">خيارات متقدمة</span> <span class="chev">▾</span></button>
+        <button class="link-btn" id="btn-advanced" type="button" aria-expanded="false" aria-controls="advanced"><span data-i18n="advanced">خيارات متقدمة</span> <span class="chev">▾</span></button>
       </div>
 
       <div class="field">
         <label class="label" data-i18n="method">الطريقة</label>
         <div class="segmented" id="method" role="radiogroup">
-          <button type="button" data-value="audio" class="seg active"><span data-i18n="m_audio">الافتراضية</span><small data-i18n="m_audio_s">audio · موصى بها</small></button>
-          <button type="button" data-value="ghost" class="seg"><span data-i18n="m_ghost">تضخيم الفيديو</span><small data-i18n="m_ghost_s">ghost · مكشوفة</small></button>
-          <button type="button" data-value="elst" class="seg"><span data-i18n="m_elst">elst</span><small data-i18n="m_elst_s">تجريبية</small></button>
-          <button type="button" data-value="fps" class="seg"><span data-i18n="m_fps">fps</span><small data-i18n="m_fps_s">تجريبية</small></button>
-          <button type="button" data-value="all" class="seg"><span data-i18n="m_all">كل الطرق</span><small data-i18n="m_all_s">ملف لكل طريقة</small></button>
+          <button type="button" role="radio" aria-checked="true" data-value="audio" class="seg active"><span data-i18n="m_audio">الافتراضية</span><small data-i18n="m_audio_s">audio · موصى بها</small></button>
+          <button type="button" role="radio" aria-checked="false" data-value="ghost" class="seg"><span data-i18n="m_ghost">تضخيم الفيديو</span><small data-i18n="m_ghost_s">ghost · مكشوفة</small></button>
+          <button type="button" role="radio" aria-checked="false" data-value="elst" class="seg"><span data-i18n="m_elst">elst</span><small data-i18n="m_elst_s">تجريبية</small></button>
+          <button type="button" role="radio" aria-checked="false" data-value="fps" class="seg"><span data-i18n="m_fps">fps</span><small data-i18n="m_fps_s">تجريبية</small></button>
+          <button type="button" role="radio" aria-checked="false" data-value="all" class="seg"><span data-i18n="m_all">كل الطرق</span><small data-i18n="m_all_s">ملف لكل طريقة</small></button>
         </div>
         <p class="hint warn hidden" id="ghost-warn" data-i18n="ghost_warn">تيك توك يكشف هذي الطريقة من أغسطس 2026 (المنشور يصير خاص). للتجربة بس.</p>
       </div>
@@ -83,8 +83,8 @@
         <div class="field">
           <label class="label" data-i18n="tags">التوقيع داخل الملف</label>
           <div class="segmented" id="tags" role="radiogroup">
-            <button type="button" data-value="replica" class="seg active"><span data-i18n="t_replica">برنامج مونتاج</span><small>replica</small></button>
-            <button type="button" data-value="plain" class="seg"><span data-i18n="t_plain">ffmpeg قديم</span><small>plain</small></button>
+            <button type="button" role="radio" aria-checked="true" data-value="replica" class="seg active"><span data-i18n="t_replica">برنامج مونتاج</span><small>replica</small></button>
+            <button type="button" role="radio" aria-checked="false" data-value="plain" class="seg"><span data-i18n="t_plain">ffmpeg قديم</span><small>plain</small></button>
           </div>
         </div>
         <div class="field">
@@ -165,7 +165,7 @@
 
     <!-- log -->
     <section class="card log-card" id="log-card">
-      <button class="row between link-btn wide" id="btn-log" type="button">
+      <button class="row between link-btn wide" id="btn-log" type="button" aria-expanded="false" aria-controls="log">
         <span data-i18n="log">السجل التفصيلي</span><span class="chev" id="log-chev">▾</span>
       </button>
       <pre class="log hidden" id="log" dir="ltr"></pre>
@@ -178,7 +178,7 @@
     <span class="muted" data-i18n="foot">يشتغل على جهازك بالكامل. ما يطلع شي للإنترنت.</span>
   </footer>
 
-  <div class="toast hidden" id="toast" dir="auto"></div>
+  <div class="toast hidden" id="toast" dir="auto" role="status" aria-live="polite"></div>
 </div>
 <script src="app.js"></script>
 </body>

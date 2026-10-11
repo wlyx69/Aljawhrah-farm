@@ -4,8 +4,9 @@
 TikTok HQ - desktop app entry point.
 
 Opens the modern window (tiktok_hq_ui.py: a native web view showing ui/index.html).
-If that cannot start (pywebview missing, no WebView2 runtime...), falls back to
-the classic Tkinter window defined below. Shipped as a double-click application
+If that cannot start (pywebview missing, no WebView2 runtime, page never loads),
+falls back to the classic Tkinter window defined below and says why at the top
+of its log. Shipped as a double-click application
 by PyInstaller (TikTokHQ.spec, .github/workflows/build-desktop.yml); ffmpeg and
 ffprobe ship inside the app.
 
@@ -13,6 +14,8 @@ ffprobe ship inside the app.
   TikTokHQ VIDEO           -> open the window with VIDEO pre-selected
   TikTokHQ --classic       -> force the classic Tkinter window
   TikTokHQ --smoke FILE    -> no window; write "ok ..." to FILE if the bundled pieces work (CI)
+  TikTokHQ --selftest-ui FILE [VIDEO]
+                           -> open the modern window, drive it (and prepare VIDEO), write ok/FAIL to FILE (CI)
   TikTokHQ --cli ARGS...   -> run the command-line tool (needs a terminal)
 """
 from __future__ import annotations
@@ -95,12 +98,36 @@ def smoke(out_file: str) -> int:
             ui_note += f" files=ERROR ({e})"
             if core.is_frozen():
                 ok = False
+        try:
+            from webview.util import get_js_dir  # pywebview's injected JS must be inside the bundle
+            ui_note += " js=ok" if (Path(get_js_dir()) / "api.js").is_file() else " js=MISSING"
+        except Exception as e:  # noqa: BLE001
+            ui_note += f" js=MISSING ({e})"
+            if core.is_frozen():
+                ok = False
         if os.name == "nt":
             try:
                 import clr  # noqa: F401  (pythonnet: pywebview's WebView2 bridge)
                 ui_note += " clr=ok"
             except Exception as e:  # noqa: BLE001
                 ui_note += f" clr=MISSING ({e})"
+                if core.is_frozen():
+                    ok = False
+            try:  # the backend webview.start() loads: WinForms + WebView2 interop DLLs
+                import tiktok_hq_ui
+                ui_note += f" platform=winforms renderer={tiktok_hq_ui.windows_renderer()}"
+                import webview.platforms.edgechromium  # noqa: F401
+                ui_note += " edgechromium=ok"
+            except Exception as e:  # noqa: BLE001
+                ui_note += f" platform=ERROR ({type(e).__name__}: {e})"
+                if core.is_frozen():
+                    ok = False
+        elif sys.platform == "darwin":
+            try:  # the backend webview.start() loads: AppKit + WebKit through pyobjc
+                import webview.platforms.cocoa as cocoa
+                ui_note += f" platform=cocoa renderer={getattr(cocoa, 'renderer', '?')}"
+            except Exception as e:  # noqa: BLE001
+                ui_note += f" platform=ERROR ({type(e).__name__}: {e})"
                 if core.is_frozen():
                     ok = False
         lines.append(("ok" if ok else "FAIL") + f" version={core.VERSION} frozen={core.is_frozen()} {tk_note} {ui_note}")
@@ -132,7 +159,7 @@ def open_folder(path: Path) -> None:
 # the window
 # --------------------------------------------------------------------------- #
 
-def run_window(initial_file: Optional[str] = None) -> int:
+def run_window(initial_file: Optional[str] = None, notice: Optional[List[str]] = None) -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
@@ -358,6 +385,23 @@ def run_window(initial_file: Optional[str] = None) -> int:
     btn_compare.config(command=on_compare)
     btn_open.config(command=on_open)
 
+    # why the modern window is not showing (links are clickable)
+    if notice:
+        import webbrowser
+        log.tag_configure("link", foreground="#1a6cf0", underline=True)
+        log.tag_bind("link", "<Enter>", lambda e: log.configure(cursor="hand2"))
+        log.tag_bind("link", "<Leave>", lambda e: log.configure(cursor=""))
+        log.configure(state="normal")
+        for i, n in enumerate(notice):
+            if n.startswith("http"):
+                tag = f"link{i}"
+                log.insert("end", n, ("link", tag))
+                log.tag_bind(tag, "<Button-1>", lambda e, url=n: webbrowser.open(url))
+                log.insert("end", "\n")
+            else:
+                log.insert("end", n + "\n")
+        log.configure(state="disabled")
+
     # tools check at startup (cheap)
     try:
         ffmpeg, ffprobe = core.require_tools()
@@ -382,25 +426,63 @@ def run_modern(initial_file: Optional[str]) -> int:
     return tiktok_hq_ui.run(initial_file)
 
 
+def classic_notice(exc: BaseException, log: Optional[Path]) -> List[str]:
+    """Lines shown at the top of the classic window when the modern one could not start."""
+    if getattr(exc, "reason", "") == "webview2":
+        import tiktok_hq_ui
+        return [
+            "تنبيه: الواجهة الحديثة تحتاج مكوّن Microsoft Edge WebView2 وهو غير موجود على هذا الجهاز،",
+            "فتحنا لك الواجهة الكلاسيكية (نفس المحرك ونفس النتيجة). للواجهة الحديثة ثبّت WebView2 Runtime من:",
+            tiktok_hq_ui.WEBVIEW2_URL,
+            "Note: the modern window needs the Microsoft Edge WebView2 Runtime (link above); using the classic window.",
+            "",
+        ]
+    lines = [
+        "تنبيه: الواجهة الحديثة ما اشتغلت على هذا الجهاز، فتحنا لك الواجهة الكلاسيكية (نفس المحرك ونفس النتيجة).",
+        "Note: the modern window could not start on this machine; using the classic window.",
+    ]
+    if log:
+        lines.append(f"log: {log}")
+    return lines + [""]
+
+
+def selftest_ui(argv: List[str]) -> int:
+    """CI: open the real modern window, drive it, write ok/FAIL to a file. Never falls back."""
+    out = str(Path(argv[0] if argv else "tiktokhq-ui-selftest.txt").resolve())
+    initial = str(Path(argv[1]).resolve()) if len(argv) > 1 else None
+    try:
+        import tiktok_hq_ui
+        return tiktok_hq_ui.run(initial, selftest=out)
+    except Exception as e:  # noqa: BLE001
+        Path(out).write_text(f"FAIL version={core.VERSION} platform={sys.platform}\nerror={e!r}\n"
+                             f"{traceback.format_exc()}\ndone\n", encoding="utf-8")
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "--smoke":
         return smoke(argv[1] if len(argv) > 1 else "tiktokhq-smoke.txt")
     if argv and argv[0] == "--cli":
         return core.main(argv[1:])
+    if argv and argv[0] == "--selftest-ui":
+        return selftest_ui(argv[1:])
     classic = "--classic" in argv
     argv = [a for a in argv if a != "--classic"]
     initial = argv[0] if argv and not argv[0].startswith("-") else None
+    notice: Optional[List[str]] = None
     if not classic:
         try:
             return run_modern(initial)
-        except Exception:  # noqa: BLE001  (no pywebview / no web view runtime: use the classic window)
+        except Exception as e:  # noqa: BLE001  (no pywebview / no WebView2 / page never loaded)
+            log: Optional[Path] = None
             try:
                 log = Path(tempfile.gettempdir()) / "tiktokhq-ui-fallback.log"
                 log.write_text(traceback.format_exc(), encoding="utf-8")
             except Exception:
-                pass
-    return run_window(initial)
+                log = None
+            notice = classic_notice(e, log)
+    return run_window(initial, notice=notice)
 
 
 if __name__ == "__main__":

@@ -104,7 +104,10 @@ jobs:
           cat smoke.txt
           grep -q "^ok" smoke.txt
           grep -q "ui=webview:" smoke.txt
+          grep -q "js=ok" smoke.txt
           grep -q "clr=ok" smoke.txt
+          grep -q "platform=winforms" smoke.txt
+          grep -q "edgechromium=ok" smoke.txt
 
       - name: Smoke test the built app (macOS)
         if: runner.os == 'macOS'
@@ -116,6 +119,44 @@ jobs:
           cat smoke.txt
           grep -q "^ok" smoke.txt
           grep -q "ui=webview:" smoke.txt
+          grep -q "js=ok" smoke.txt
+          grep -q "platform=cocoa renderer=wkwebview" smoke.txt
+
+      - name: Ensure the WebView2 runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $id = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$id",
+                    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$id",
+                    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$id")
+          $pv = $null
+          foreach ($k in $keys) { if (Test-Path $k) { $v = (Get-ItemProperty $k).pv; if ($v -and $v -ne '0.0.0.0') { $pv = $v; break } } }
+          if ($pv) { "WebView2 runtime present: $pv" } else {
+            "WebView2 runtime missing on the runner: installing the Evergreen runtime"
+            $setup = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $setup
+            Start-Process -FilePath $setup -ArgumentList '/silent', '/install' -Wait
+          }
+
+      - name: UI self-test of the built app (real window, prepares a clip through the page)
+        timeout-minutes: 10
+        env:
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          "./bin/ffmpeg${EXT}" -hide_banner -v error -y -f lavfi -i testsrc2=size=640x1136:rate=30:duration=2 \
+            -f lavfi -i sine=frequency=440:duration=2:sample_rate=48000 -c:v libx264 -pix_fmt yuv420p \
+            -c:a aac -shortest -movflags +faststart selftest_clip.mp4
+          rm -f ui.txt selftest_clip_TikTokHQ.mp4
+          if [ "$RUNNER_OS" = "Windows" ]; then APP=./dist/TikTokHQ.exe; else APP=./dist/TikTokHQ.app/Contents/MacOS/TikTokHQ; fi
+          "$APP" --selftest-ui ui.txt selftest_clip.mp4 &
+          pid=$!
+          for i in $(seq 1 420); do grep -q "^done" ui.txt 2>/dev/null && break; sleep 1; done
+          cat ui.txt || echo "no ui.txt written"
+          kill "$pid" 2>/dev/null || true
+          grep -q "^ok" ui.txt
+          test -s selftest_clip_TikTokHQ.mp4
 
       - name: Package
         env:
