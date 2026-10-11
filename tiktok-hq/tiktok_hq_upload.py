@@ -5,7 +5,7 @@ TikTok HQ - get a prepared video onto TikTok through the user's own browser.
 
 TikTok's official Content Posting API cannot be used here: an app that has not
 passed TikTok's audit may only post to private accounts. So this module drives
-the TikTok Studio upload page in a real Microsoft Edge / Google Chrome window,
+the TikTok Studio upload page in a real Google Chrome window (Edge when Chrome is not installed),
 the same page a person uses (and the upload path the "original quality" method
 is built for). It uses a dedicated browser profile: the user logs in once in
 that window and the session is kept for later uploads.
@@ -245,26 +245,46 @@ def app_data_dir() -> Path:
     return base / "TikTokHQ"
 
 
+# Google Chrome first everywhere; Edge (always present on Windows) only when Chrome is not installed
+WINDOWS_BROWSERS = (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe",
+                    r"BraveSoftware\Brave-Browser\Application\brave.exe")
+MAC_BROWSERS = ("Google Chrome", "Microsoft Edge", "Brave Browser", "Chromium")
+LINUX_BROWSERS = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge")
+
+
 def browser_candidates() -> List[Path]:
     env = os.environ.get("TIKTOKHQ_BROWSER")
     out: List[Path] = [Path(env)] if env else []
     if os.name == "nt":
-        roots = [os.environ.get(k, "") for k in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA")]
-        for rel in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe",
-                    r"BraveSoftware\Brave-Browser\Application\brave.exe"):
+        roots = [os.environ.get(k, "") for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        for rel in WINDOWS_BROWSERS:
             out += [Path(r) / rel for r in roots if r]
     elif sys.platform == "darwin":
-        for app, exe in (("Google Chrome", "Google Chrome"), ("Microsoft Edge", "Microsoft Edge"),
-                         ("Brave Browser", "Brave Browser"), ("Chromium", "Chromium")):
+        for app in MAC_BROWSERS:
             for base in (Path("/Applications"), Path.home() / "Applications"):
-                out.append(base / f"{app}.app" / "Contents" / "MacOS" / exe)
+                out.append(base / f"{app}.app" / "Contents" / "MacOS" / app)
     else:
         import shutil
-        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"):
+        for name in LINUX_BROWSERS:
             p = shutil.which(name)
             if p:
                 out.append(Path(p))
     return out
+
+
+def browser_kind(exe: Path) -> str:
+    """chrome / edge / brave / chromium (from the program name)."""
+    n = Path(exe).name.lower()
+    for kind in ("edge", "brave", "chromium", "chrome"):
+        if kind in n:
+            return kind
+    return "browser"
+
+
+def profile_dir(exe: Path) -> Path:
+    """The browser profile the app uses: one per browser (a profile one browser made is not opened by another,
+    and a window of the other browser left open is not taken over)."""
+    return app_data_dir() / f"browser-{browser_kind(exe)}"
 
 
 def find_browser() -> Optional[Path]:
@@ -283,8 +303,9 @@ def _http_json(url: str, method: str = "GET", timeout: float = 3.0) -> Any:
 class Browser:
     """A Chromium-family browser on a dedicated profile with remote debugging on 127.0.0.1."""
 
-    def __init__(self, profile: Path) -> None:
+    def __init__(self, profile: Path, exe: Optional[Path] = None) -> None:
         self.profile = profile
+        self.exe = exe
         self.port: Optional[int] = None
         self.proc: Optional[subprocess.Popen] = None
 
@@ -304,7 +325,7 @@ class Browser:
         if port:
             self.port = port
             return True
-        exe = find_browser()
+        exe = self.exe or find_browser()
         if not exe:
             raise UploadError("browser", "no_browser")
         try:
@@ -623,7 +644,13 @@ def prepare_post(req: UploadRequest, status: Callable[[str, str], None],
         raise UploadError("attach", f"file not found: {video}")
     if req.privacy not in PRIVACY_LABELS:
         raise UploadError("details", f"unknown privacy {req.privacy!r}")
-    profile = Path(req.profile) if req.profile else app_data_dir() / "browser"
+    exe = find_browser()
+    if req.profile:
+        profile = Path(req.profile)
+    elif exe:
+        profile = profile_dir(exe)
+    else:
+        raise UploadError("browser", "no_browser")
     debug_root = Path(req.debug_root) if req.debug_root else app_data_dir() / "upload-debug"
     prefer = "mock" if req.mock else "tiktok"
     step = "browser"
@@ -635,7 +662,7 @@ def prepare_post(req: UploadRequest, status: Callable[[str, str], None],
 
     try:
         say("browser")
-        br = Browser(profile)
+        br = Browser(profile, exe)
         if br.start(req.url):
             # the window from an earlier upload is still open: a new tab, the old one is left as it is
             page = Page(br.new_page(req.url), cancel)

@@ -83,6 +83,20 @@ class HelperTests(unittest.TestCase):
             else:
                 os.environ["TIKTOKHQ_BROWSER"] = old
 
+    def test_chrome_comes_before_edge(self):
+        self.assertTrue(up.WINDOWS_BROWSERS[0].endswith("chrome.exe"))
+        self.assertTrue(up.WINDOWS_BROWSERS[1].endswith("msedge.exe"))
+        self.assertEqual(up.MAC_BROWSERS[0], "Google Chrome")
+        self.assertEqual(up.LINUX_BROWSERS[0], "google-chrome")
+
+    def test_each_browser_has_its_own_profile(self):
+        kinds = {name: up.browser_kind(Path(name)) for name in
+                 ("chrome.exe", "msedge.exe", "brave.exe", "Google Chrome", "Microsoft Edge", "chromium-browser")}
+        self.assertEqual(kinds, {"chrome.exe": "chrome", "msedge.exe": "edge", "brave.exe": "brave",
+                                 "Google Chrome": "chrome", "Microsoft Edge": "edge", "chromium-browser": "chromium"})
+        self.assertNotEqual(up.profile_dir(Path("chrome.exe")), up.profile_dir(Path("msedge.exe")))
+        self.assertEqual(up.profile_dir(Path("Google Chrome")).name, "browser-chrome")
+
     def test_bad_input_fails_before_any_browser(self):
         with self.assertRaises(up.UploadError) as cm:
             up.prepare_post(up.UploadRequest(video="/no/such/file.mp4"), lambda s, d: None)

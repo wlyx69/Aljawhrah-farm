@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 OUTPUT_SUFFIX = "_TikTokHQ"
 
 # The 8-byte filler every ghost sample points to / consists of:
