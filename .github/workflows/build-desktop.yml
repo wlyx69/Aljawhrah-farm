@@ -216,20 +216,6 @@ jobs:
           if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
           grep -q "^ok" again.txt
 
-      - name: Page through the local server (macOS, diagnostic only)
-        # the app hands the page to the macOS web view as one string; this records whether loading it from
-        # pywebview's 127.0.0.1 server (what 2.2.0 did) works on this runner, without failing the build
-        if: runner.os == 'macOS'
-        continue-on-error: true
-        timeout-minutes: 4
-        run: |
-          set -uo pipefail
-          rm -f server.txt
-          open -n -a "$PWD/dist/TikTokHQ.app" --env "TIKTOKHQ_PAGE_MODE=server" --args --selftest-ui "$PWD/server.txt"
-          for i in $(seq 1 170); do grep -q "^done" server.txt 2>/dev/null && break; sleep 1; done
-          cat server.txt || echo "no server.txt written"
-          grep -q "^ok" server.txt
-
       - name: Package
         env:
           ARTIFACT: ${{ matrix.artifact }}
