@@ -452,6 +452,61 @@ def windows_renderer() -> str:
     return str(getattr(wf, "renderer", ""))
 
 
+RELOAD_AFTER = 6.0   # macOS: seconds without a loaded page before loading it again
+RELOAD_TRIES = 3
+
+
+def _mac_log_navigation_errors() -> None:
+    """pywebview's macOS navigation delegate ignores failed loads; add handlers that log them (pywebview logger)."""
+    try:
+        import objc
+        from webview.platforms import cocoa
+        log = logging.getLogger("pywebview")
+
+        # an exception escaping into WebKit would end the app: these never raise
+        def failed(self, webview, navigation, error):  # noqa: ANN001
+            try:
+                log.warning(f"page load failed: {error.localizedDescription()} (domain={error.domain()} "
+                            f"code={error.code()} url={error.userInfo().get('NSErrorFailingURLStringKey')})")
+            except Exception:  # noqa: BLE001
+                pass
+
+        def content_died(self, webview):  # noqa: ANN001
+            try:
+                log.warning("the page's web content process ended")
+            except Exception:  # noqa: BLE001
+                pass
+
+        delegate = cocoa.BrowserView.BrowserDelegate
+        methods = []
+        for sel, fn, sig in ((b"webView:didFailProvisionalNavigation:withError:", failed, b"v@:@@@"),
+                             (b"webView:didFailNavigation:withError:", failed, b"v@:@@@"),
+                             (b"webViewWebContentProcessDidTerminate:", content_died, b"v@:@")):
+            if not delegate.instancesRespondToSelector_(sel):
+                methods.append(objc.selector(fn, selector=sel, signature=sig))
+        if methods:
+            objc.classAddMethods(delegate, methods)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("pywebview").debug(f"navigation error logging unavailable: {e!r}")
+
+
+def _mac_load_guard(window: Any, state: dict) -> None:
+    """A first load that fails leaves the macOS window blank for good (pywebview neither reports nor retries it):
+    load the page again a few times."""
+    if not window.events.shown.wait(60):
+        return
+    for attempt in range(1, RELOAD_TRIES + 1):
+        if window.events.before_load.wait(RELOAD_AFTER) or state.get("closed"):
+            return
+        logging.getLogger("pywebview").warning(f"page not loaded {attempt * RELOAD_AFTER:.0f} s after the window "
+                                               f"opened: loading it again ({window.real_url})")
+        state["reloads"] = attempt
+        try:
+            window.gui.load_url(window.real_url, window.uid)
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("pywebview").warning(f"reload failed: {e!r}")
+
+
 def _js_wait(window: Any, expr: str, timeout: float) -> Any:
     """Evaluate `expr` until it returns something truthy (or the timeout passes); return the last value."""
     deadline = time.monotonic() + timeout
@@ -602,7 +657,7 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             late = ev.loaded.wait(45)
             lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no"))
             raise RuntimeError("the page did not load within 60 s")
-        lines.append(f"load_seconds={time.monotonic() - t0:.1f}")
+        lines.append(f"load_seconds={time.monotonic() - t0:.1f} reloads={state.get('reloads', 0)}")
         lines.append(f"renderer={api.renderer}")
         expected = json.dumps("v" + core.VERSION)
         booted = _js_wait(window, f"document.getElementById('version').textContent === {expected} ? 'yes' : ''", 30)
@@ -641,8 +696,10 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
                 pass
         state["selftest_rc"] = 0 if ok else 1
         tail = state.get("log_tail")
-        if not ok and tail is not None:
-            lines += ["pywebview log:"] + [f"  {line}" for line in tail.lines]
+        if tail is not None:
+            shown = list(tail.lines) if not ok else [ln for ln in tail.lines if " WARNING " in ln or " ERROR " in ln]
+            if shown:
+                lines += ["pywebview log:"] + [f"  {line}" for line in shown]
         head = ("ok" if ok else "FAIL") + f" version={core.VERSION} platform={sys.platform}"
         try:
             Path(out_path).write_text("\n".join([head] + lines + ["done"]) + "\n", encoding="utf-8")
@@ -727,6 +784,10 @@ def run(initial_file: Optional[str] = None, selftest: Optional[str] = None, uplo
     window.events.initialized += on_initialized
     window.events.loaded += on_loaded
     window.events.closed += on_closed
+
+    if sys.platform == "darwin":
+        _mac_log_navigation_errors()
+        threading.Thread(target=_mac_load_guard, args=(window, state), daemon=True).start()
 
     func, args = None, None
     if selftest:
