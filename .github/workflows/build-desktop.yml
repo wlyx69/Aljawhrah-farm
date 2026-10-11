@@ -181,7 +181,18 @@ jobs:
           cat ui.txt || echo "no ui.txt written"
           if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
           if ! grep -q "^ok" ui.txt; then
-            if [ "$RUNNER_OS" = "macOS" ]; then ps -axo pid,etime,comm | grep -i -E "chrome|tiktokhq|webkit" || true; fi
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              ps -axo pid,etime,comm | grep -i -E "chrome|tiktokhq|webkit" || true
+              # a crashed web page process leaves a report here
+              for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+                ls -t "$d" 2>/dev/null | grep -i -E "webkit|webcontent|tiktokhq" | head -n 3 | while read -r f; do
+                  echo "=== $d/$f"
+                  head -n 1 "$d/$f" | cut -c1-600
+                  grep -o -E '"(exception|termination)":\{[^}]*\}' "$d/$f" | head -n 4 || true
+                  grep -o -E '"symbol":"[^"]*"' "$d/$f" | head -n 40 || true
+                done || true
+              done
+            fi
             exit 1
           fi
           grep -q "upload_checks=.*noticed:ok" ui.txt

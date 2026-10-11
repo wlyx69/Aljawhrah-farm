@@ -184,7 +184,9 @@ button { cursor: pointer; }
 .busy .btn.primary { pointer-events: none; opacity: .6; }
 
 /* posting on TikTok */
-.input.textarea { display: block; width: 100%; min-height: 58px; resize: vertical; line-height: 1.5; direction: revert; unicode-bidi: plaintext; }
+.textarea { display: block; width: 100%; min-height: 58px; resize: vertical; line-height: 1.5; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--text); text-align: start; }
+.textarea:focus { outline: 2px solid rgba(37, 244, 238, .4); border-color: var(--accent-line); }
 .input, .textarea { -webkit-user-select: text; user-select: text; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .upmark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(37, 244, 238, .14); color: var(--accent-text); flex: 0 0 auto; }

@@ -539,6 +539,13 @@ def _selftest(window: Any, api: Api, out_path: str, initial_file: Optional[str],
             # where it stopped: before_load is set once the page finished loading, loaded once the bridge is in
             ev = window.events
             lines.append("window_events=" + " ".join(f"{n}:{int(getattr(ev, n).is_set())}" for n in WINDOW_EVENTS))
+            page_url = str(getattr(window, "real_url", "") or "")
+            try:
+                import urllib.request
+                with urllib.request.urlopen(page_url, timeout=5) as r:  # noqa: S310  (pywebview's 127.0.0.1 server)
+                    lines.append(f"page_server={r.status} {len(r.read())} bytes ({page_url})")
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"page_server=ERROR {type(e).__name__}: {e} ({page_url})")
             late = ev.loaded.wait(60)
             lines.append("loaded_later=" + (f"after {time.monotonic() - t0:.0f} s" if late else "no (120 s)"))
             raise RuntimeError("the page did not load within 60 s")

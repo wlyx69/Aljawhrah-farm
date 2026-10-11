@@ -192,9 +192,12 @@
     var arias = document.querySelectorAll('[data-i18n-aria]');
     for (var k = 0; k < arias.length; k++) arias[k].setAttribute('aria-label', t(arias[k].getAttribute('data-i18n-aria')));
     $('lang-label').textContent = state.lang === 'ar' ? 'EN' : 'ع';
+    captionDir();
     if (state.file) renderFile(state.file);
     if (state.up) renderUpload();
   }
+  // the caption follows what is typed (Arabic or English); empty, it follows the page so the hint reads right
+  function captionDir() { var c = $('caption'); c.dir = c.value ? 'auto' : (state.lang === 'ar' ? 'rtl' : 'ltr'); }
   function applyTheme(theme) {
     state.theme = theme === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', state.theme);
@@ -543,6 +546,7 @@
       $('btn-log').setAttribute('aria-expanded', state.logOpen ? 'true' : 'false');
     });
     wireSegmented('privacy', function () { savePrefs(); });
+    $('caption').addEventListener('input', captionDir);
     $('auto-upload').addEventListener('change', function () { refreshUploadButton(); savePrefs(); });
     $('btn-upload').addEventListener('click', function () { if (state.outputs.length === 1) startUpload(state.outputs[0]); });
     $('btn-up-stop').addEventListener('click', function () { api().cancel_upload().then(null, function () {}); });
